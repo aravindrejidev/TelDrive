@@ -1,0 +1,32 @@
+name: telegram_cloud_storage
+description: "A Google Drive-style cloud storage app backed by the Telegram Bot API, with support for linking multiple channels to multiple sync folders."
+publish_to: 'none'
+version: 1.1.0+2
+
+environment:
+  sdk: '>=3.10.0 <4.0.0'
+  flutter: ">=3.35.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  provider: ^6.1.5
+  sqflite: ^2.4.2
+  path: ^1.9.1
+  path_provider: ^2.1.5
+  http: ^1.3.0
+  file_picker: ^12.0.0
+  workmanager: ^0.10.9
+  flutter_secure_storage: ^10.3.1
+  permission_handler: ^13.0.1
+  open_filex: ^4.5.0
+  url_launcher: ^6.3.1
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
