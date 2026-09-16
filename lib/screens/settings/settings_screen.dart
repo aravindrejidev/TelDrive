@@ -1,6 +1,7 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../models/file_item.dart';
 import '../../models/sync_link.dart';
 import '../../providers/file_provider.dart';
 import '../../providers/settings_provider.dart';
