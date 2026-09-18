@@ -8,15 +8,12 @@ import 'database_service.dart';
 import 'storage_service.dart';
 import 'telegram_service.dart';
 
-/// Entry point Android calls in a fresh background isolate whenever the
-/// scheduled periodic sync becomes due. Must stay top-level with
-/// `@pragma('vm:entry-point')`.
 @pragma('vm:entry-point')
 void callbackDispatcher() {
   Workmanager().executeTask((task, inputData) async {
     if (task == AppConstants.periodicSyncTaskName) {
       try {
-        await SyncService.instance.runAllSyncLinks();
+        await SyncService.instance.runAutoSyncEnabledLinks();
         return Future.value(true);
       } catch (_) {
         return Future.value(false);
@@ -41,9 +38,6 @@ class SyncResult {
       );
 }
 
-/// Registers/cancels the single shared background task, and holds the
-/// "scan a folder, upload anything new to its channel" logic — run once per
-/// enabled [SyncLink] rather than for one global folder.
 class SyncService {
   SyncService._internal();
   static final SyncService instance = SyncService._internal();
@@ -52,9 +46,6 @@ class SyncService {
     await Workmanager().initialize(callbackDispatcher);
   }
 
-  /// (Re-)registers the periodic background task at [frequencyMinutes]. Call
-  /// this whenever a Sync Link's Auto-Sync is turned on, or the shared
-  /// frequency changes. One periodic task covers every enabled link.
   Future<void> ensureAutoSyncScheduled({required int frequencyMinutes}) async {
     final minutes = frequencyMinutes < AppConstants.minSyncFrequencyMinutes
         ? AppConstants.minSyncFrequencyMinutes
@@ -76,27 +67,36 @@ class SyncService {
     await Workmanager().cancelByUniqueName(AppConstants.periodicSyncUniqueName);
   }
 
-  /// Runs every Sync Link that currently has Auto-Sync turned on and
-  /// returns the combined totals. Safe to call from the foreground UI
-  /// ("Sync now") and from [callbackDispatcher]'s background isolate.
-  Future<SyncResult> runAllSyncLinks() async {
+  /// Runs only the Sync Links that currently have Auto-Sync turned on.
+  /// This is what the periodic background task calls — it must respect
+  /// the toggle, since that's the whole point of the toggle.
+  Future<SyncResult> runAutoSyncEnabledLinks() async {
+    final links = await DatabaseService.instance.getAllSyncLinks();
+    return _runLinks(links.where((l) => l.autoSyncEnabled).toList());
+  }
+
+  /// Runs every Sync Link right now, regardless of its Auto-Sync toggle.
+  /// This is what the in-app "Sync now" button calls: tapping it is
+  /// itself an explicit, one-off request, so a link the user left
+  /// Auto-Sync off for (because they'd rather trigger it manually) should
+  /// still run here.
+  Future<SyncResult> runAllLinksNow() async {
+    final links = await DatabaseService.instance.getAllSyncLinks();
+    return _runLinks(links);
+  }
+
+  Future<SyncResult> _runLinks(List<SyncLink> links) async {
     final botToken = await StorageService.instance.getBotToken();
     if (botToken == null) {
       return const SyncResult(uploaded: 0, failed: 0, skipped: 0);
     }
-
-    final links = await DatabaseService.instance.getAllSyncLinks();
     var total = const SyncResult(uploaded: 0, failed: 0, skipped: 0);
-
-    for (final link in links.where((l) => l.autoSyncEnabled)) {
+    for (final link in links) {
       total = total + await runSyncLink(link, botToken: botToken);
     }
     return total;
   }
 
-  /// Scans a single [link]'s folder for files not uploaded before (matched
-  /// by exact local path, across all links) and uploads each one to that
-  /// link's channel.
   Future<SyncResult> runSyncLink(SyncLink link, {required String botToken}) async {
     final folder = Directory(link.folderPath);
     if (!await folder.exists()) {
