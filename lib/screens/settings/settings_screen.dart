@@ -34,7 +34,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _isSyncing = true;
       _syncResultMessage = null;
     });
-    final result = await SyncService.instance.runAllLinksNow()
+    final result = await SyncService.instance.runAllLinksNow();
     if (!mounted) return;
     await context.read<FileProvider>().loadAll();
     setState(() {
