@@ -79,11 +79,19 @@ class UploadProvider extends ChangeNotifier {
       final detected = FileTypeHelper.categoryForFileName(platformFile.name);
       final effective = detected == FileCategory.document ? category : detected;
 
+      final file = File(path);
+      var size = 0;
+      try {
+        size = await file.length();
+      } catch (_) {
+        // The real size is read again when the upload starts.
+      }
+
       _enqueue(
-        file: File(path),
+        file: file,
         fileName: platformFile.name,
         category: effective,
-        size: platformFile.size,
+        size: size,
         fileProvider: fileProvider,
       );
     }

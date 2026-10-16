@@ -16,12 +16,12 @@ void callbackDispatcher() {
     if (task == AppConstants.periodicSyncTaskName) {
       try {
         await SyncService.instance.runAutoSyncEnabledLinks();
-        return Future.value(true);
+        return true;
       } catch (_) {
-        return Future.value(false);
+        return false;
       }
     }
-    return Future.value(true);
+    return true;
   });
 }
 
