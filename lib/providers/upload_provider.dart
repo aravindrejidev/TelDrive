@@ -8,35 +8,47 @@ import '../services/storage_service.dart';
 import '../services/telegram_service.dart';
 import '../utils/constants.dart';
 import '../utils/file_type_helper.dart';
+import '../utils/helpers.dart';
 import 'file_provider.dart';
 
-enum UploadTaskStatus { uploading, success, failed }
+enum UploadTaskStatus { queued, uploading, success, failed }
 
 class UploadTask {
   UploadTask({
     required this.id,
+    required this.file,
     required this.fileName,
     required this.category,
     required this.totalBytes,
   });
 
   final String id;
+  final File file;
   final String fileName;
   final FileCategory category;
-  final int totalBytes;
+  int totalBytes;
 
   double progress = 0;
-  UploadTaskStatus status = UploadTaskStatus.uploading;
+  UploadTaskStatus status = UploadTaskStatus.queued;
   String? errorMessage;
+
+  bool get isFinished =>
+      status == UploadTaskStatus.success || status == UploadTaskStatus.failed;
 
   bool get exceedsRedownloadLimit => totalBytes > AppConstants.maxRedownloadBytes;
 }
 
 /// Drives the manual "pick a file and upload it" flow. Manual uploads from
 /// the Photos/Videos/Audio/Documents tabs always go to the primary channel
-/// (Sync Links are for automatic folder syncing only — see SettingsScreen).
+/// (Sync Links are for automatic folder syncing only - see SettingsScreen).
+///
+/// Uploads run two at a time; the rest wait in a visible queue.
 class UploadProvider extends ChangeNotifier {
+  static const int _maxConcurrent = 2;
+
   final Map<String, UploadTask> _tasks = {};
+  final List<Future<void> Function()> _pending = [];
+  int _active = 0;
   int _taskCounter = 0;
 
   List<UploadTask> get tasks => _tasks.values.toList().reversed.toList();
@@ -57,93 +69,106 @@ class UploadProvider extends ChangeNotifier {
 
     if (picked.isEmpty) return;
 
-    final botToken = await StorageService.instance.getBotToken();
-    final channelId = await StorageService.instance.getChannelId();
-    if (botToken == null || channelId == null) return;
-
-    final telegram = TelegramService(botToken: botToken, channelId: channelId);
-
     for (final platformFile in picked) {
       final path = platformFile.path;
       if (path == null) continue;
-      unawaited(_uploadOne(
+
+      // Trust the real file type over the tab it was picked from, so a FLAC
+      // chosen in the Documents tab still lands under Audio. Unknown types
+      // stay in the tab the person was looking at.
+      final detected = FileTypeHelper.categoryForFileName(platformFile.name);
+      final effective = detected == FileCategory.document ? category : detected;
+
+      _enqueue(
         file: File(path),
         fileName: platformFile.name,
-        category: category,
-        channelId: channelId,
-        telegram: telegram,
+        category: effective,
+        size: platformFile.size,
         fileProvider: fileProvider,
-      ));
+      );
     }
   }
 
-  Future<void> uploadSingleFile({
+  void _enqueue({
     required File file,
     required String fileName,
     required FileCategory category,
+    required int size,
     required FileProvider fileProvider,
-  }) async {
-    final botToken = await StorageService.instance.getBotToken();
-    final channelId = await StorageService.instance.getChannelId();
-    if (botToken == null || channelId == null) return;
-    final telegram = TelegramService(botToken: botToken, channelId: channelId);
-    await _uploadOne(
+  }) {
+    final id = 'upload_${_taskCounter++}';
+    final task = UploadTask(
+      id: id,
       file: file,
       fileName: fileName,
       category: category,
-      channelId: channelId,
-      telegram: telegram,
-      fileProvider: fileProvider,
-    );
-  }
-
-  Future<void> _uploadOne({
-    required File file,
-    required String fileName,
-    required FileCategory category,
-    required String channelId,
-    required TelegramService telegram,
-    required FileProvider fileProvider,
-  }) async {
-    final id = 'upload_${_taskCounter++}';
-    final length = await file.length();
-    final task = UploadTask(
-      id: id,
-      fileName: fileName,
-      category: category,
-      totalBytes: length,
+      totalBytes: size,
     );
     _tasks[id] = task;
     notifyListeners();
+    _pending.add(() => _run(task, fileProvider));
+    _pump();
+  }
 
-    if (length > AppConstants.maxUploadBytes) {
-      task.status = UploadTaskStatus.failed;
-      task.errorMessage =
-          'File is larger than the 50 MB Telegram Bot API upload limit.';
-      notifyListeners();
-      return;
+  void _pump() {
+    while (_active < _maxConcurrent && _pending.isNotEmpty) {
+      final job = _pending.removeAt(0);
+      _active++;
+      job().whenComplete(() {
+        _active--;
+        _pump();
+      });
     }
+  }
+
+  Future<void> _run(UploadTask task, FileProvider fileProvider) async {
+    task.status = UploadTaskStatus.uploading;
+    task.progress = 0;
+    task.errorMessage = null;
+    notifyListeners();
 
     try {
+      final length = await task.file.length();
+      task.totalBytes = length;
+      if (length > AppConstants.maxUploadBytes) {
+        throw AppException(
+          'This file is over the 50 MB limit Telegram sets for bot uploads.',
+        );
+      }
+
+      final botToken = await StorageService.instance.getBotToken();
+      final channelId = await StorageService.instance.getChannelId();
+      if (botToken == null || channelId == null) {
+        throw AppException('Telegram credentials are missing.');
+      }
+      final keepOriginal = await StorageService.instance.getKeepPhotoOriginal();
+      final telegram = TelegramService(botToken: botToken, channelId: channelId);
+
       final result = await telegram.uploadFile(
-        file: file,
-        fileName: fileName,
-        category: category,
+        file: task.file,
+        fileName: task.fileName,
+        category: task.category,
+        keepPhotoOriginal: keepOriginal,
         onProgress: (sent, total) {
-          task.progress = total > 0 ? sent / total : 0;
-          notifyListeners();
+          final value = total > 0 ? sent / total : 0.0;
+          // Repaint at most every 1%; chunks arrive far more often than that.
+          if (value - task.progress >= 0.01 || value >= 1) {
+            task.progress = value;
+            notifyListeners();
+          }
         },
       );
 
       final item = FileItem(
-        fileName: fileName,
+        fileName: task.fileName,
         telegramFileId: result.fileId,
         telegramUniqueId: result.fileUniqueId,
         telegramMessageId: result.messageId,
-        category: category,
+        category: task.category,
         fileSizeBytes: result.fileSize,
-        mimeType: FileTypeHelper.mimeTypeForFileName(fileName),
-        localPath: file.path,
+        mimeType: FileTypeHelper.mimeTypeForFileName(task.fileName),
+        localPath: task.file.path,
+        sourcePath: task.file.path,
         uploadedAt: DateTime.now(),
         channelId: channelId,
       );
@@ -152,20 +177,38 @@ class UploadProvider extends ChangeNotifier {
 
       task.status = UploadTaskStatus.success;
       task.progress = 1;
+      notifyListeners();
+
+      // Finished uploads tidy themselves away; failures stay until dismissed.
+      unawaited(Future<void>.delayed(const Duration(seconds: 4), () {
+        if (_tasks[task.id]?.status == UploadTaskStatus.success) {
+          dismissTask(task.id);
+        }
+      }));
     } catch (e) {
       task.status = UploadTaskStatus.failed;
-      task.errorMessage = e.toString();
+      task.errorMessage = friendlyError(e);
+      notifyListeners();
     }
+  }
+
+  /// Puts a failed upload back in the queue.
+  void retry(String id, FileProvider fileProvider) {
+    final task = _tasks[id];
+    if (task == null || task.status != UploadTaskStatus.failed) return;
+    task.status = UploadTaskStatus.queued;
+    task.errorMessage = null;
     notifyListeners();
+    _pending.add(() => _run(task, fileProvider));
+    _pump();
   }
 
   void dismissTask(String id) {
-    _tasks.remove(id);
-    notifyListeners();
+    if (_tasks.remove(id) != null) notifyListeners();
   }
 
   void clearFinished() {
-    _tasks.removeWhere((_, task) => task.status != UploadTaskStatus.uploading);
+    _tasks.removeWhere((_, task) => task.isFinished);
     notifyListeners();
   }
 }

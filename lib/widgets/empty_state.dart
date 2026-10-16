@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import '../theme/neu_theme.dart';
+import 'neu/neu_controls.dart';
+import 'neu/neu_surface.dart';
 
 class EmptyState extends StatelessWidget {
   const EmptyState({
@@ -14,33 +17,32 @@ class EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final c = context.neu;
     return Center(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 32),
+        padding: const EdgeInsets.symmetric(horizontal: 40),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.primaryContainer.withValues(alpha: 0.4),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, size: 42, color: theme.colorScheme.primary),
+            NeuSurface(
+              depth: NeuDepth.inset,
+              radius: 99,
+              width: 118,
+              height: 118,
+              distance: 7,
+              blur: 16,
+              child: Center(child: GradientIcon(icon, size: 46)),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 28),
             Text(
               title,
-              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+              style: Theme.of(context).textTheme.titleLarge,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             Text(
               message,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
+              style: TextStyle(fontSize: 14.5, height: 1.45, color: c.textMuted),
               textAlign: TextAlign.center,
             ),
           ],

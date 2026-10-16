@@ -1,9 +1,11 @@
 import 'dart:io';
+import 'package:path/path.dart' as p;
 import 'package:workmanager/workmanager.dart';
 import '../models/file_item.dart';
 import '../models/sync_link.dart';
 import '../utils/constants.dart';
 import '../utils/file_type_helper.dart';
+import '../utils/helpers.dart';
 import 'database_service.dart';
 import 'storage_service.dart';
 import 'telegram_service.dart';
@@ -24,23 +26,56 @@ void callbackDispatcher() {
 }
 
 class SyncResult {
-  const SyncResult({required this.uploaded, required this.failed, required this.skipped});
+  const SyncResult({
+    this.uploaded = 0,
+    this.failed = 0,
+    this.skipped = 0,
+    this.tooLarge = 0,
+    this.busy = false,
+    this.timedOut = false,
+    this.lastError,
+  });
+
   final int uploaded;
   final int failed;
+
+  /// Files left for a later run: still being written, unreadable, or empty.
   final int skipped;
 
-  int get totalConsidered => uploaded + failed + skipped;
+  /// Files over Telegram's 50 MB bot upload limit. They can never be synced.
+  final int tooLarge;
+
+  /// Another sync was already running, so this call did nothing.
+  final bool busy;
+
+  /// The time budget ran out; the remaining files wait for the next run.
+  final bool timedOut;
+
+  /// The most recent failure, in plain language.
+  final String? lastError;
+
+  int get totalConsidered => uploaded + failed + skipped + tooLarge;
 
   SyncResult operator +(SyncResult other) => SyncResult(
         uploaded: uploaded + other.uploaded,
         failed: failed + other.failed,
         skipped: skipped + other.skipped,
+        tooLarge: tooLarge + other.tooLarge,
+        busy: busy || other.busy,
+        timedOut: timedOut || other.timedOut,
+        lastError: other.lastError ?? lastError,
       );
 }
 
 class SyncService {
   SyncService._internal();
   static final SyncService instance = SyncService._internal();
+
+  bool _isRunning = false;
+
+  static const Set<String> _temporaryExtensions = {
+    'tmp', 'temp', 'part', 'partial', 'crdownload', 'download', 'cache',
+  };
 
   Future<void> initialize() async {
     await Workmanager().initialize(callbackDispatcher);
@@ -69,7 +104,10 @@ class SyncService {
 
   Future<SyncResult> runAutoSyncEnabledLinks() async {
     final links = await DatabaseService.instance.getAllSyncLinks();
-    return _runLinks(links.where((l) => l.autoSyncEnabled).toList());
+    return _runLinks(
+      links.where((l) => l.autoSyncEnabled).toList(),
+      budget: AppConstants.backgroundSyncBudget,
+    );
   }
 
   Future<SyncResult> runAllLinksNow() async {
@@ -77,58 +115,114 @@ class SyncService {
     return _runLinks(links);
   }
 
-  Future<SyncResult> _runLinks(List<SyncLink> links) async {
+  Future<SyncResult> runLinkNow(SyncLink link) => _runLinks([link]);
+
+  Future<SyncResult> _runLinks(List<SyncLink> links, {Duration? budget}) async {
+    if (_isRunning) return const SyncResult(busy: true);
+
     final botToken = await StorageService.instance.getBotToken();
-    if (botToken == null) {
-      return const SyncResult(uploaded: 0, failed: 0, skipped: 0);
+    if (botToken == null || botToken.isEmpty) return const SyncResult();
+    final keepPhotoOriginal = await StorageService.instance.getKeepPhotoOriginal();
+    final deadline = budget == null ? null : DateTime.now().add(budget);
+
+    _isRunning = true;
+    try {
+      var total = const SyncResult();
+      for (final link in links) {
+        if (deadline != null && DateTime.now().isAfter(deadline)) {
+          total = total + const SyncResult(timedOut: true);
+          break;
+        }
+        total = total +
+            await _syncLink(
+              link,
+              botToken: botToken,
+              keepPhotoOriginal: keepPhotoOriginal,
+              deadline: deadline,
+            );
+      }
+      return total;
+    } finally {
+      _isRunning = false;
     }
-    var total = const SyncResult(uploaded: 0, failed: 0, skipped: 0);
-    for (final link in links) {
-      total = total + await runSyncLink(link, botToken: botToken);
-    }
-    return total;
   }
 
-  Future<SyncResult> runSyncLink(SyncLink link, {required String botToken}) async {
+  bool _isTemporary(String fileName) {
+    if (fileName.endsWith('~')) return true;
+    return _temporaryExtensions.contains(FileTypeHelper.extensionOf(fileName));
+  }
+
+  Future<SyncResult> _syncLink(
+    SyncLink link, {
+    required String botToken,
+    required bool keepPhotoOriginal,
+    DateTime? deadline,
+  }) async {
     final folder = Directory(link.folderPath);
     if (!await folder.exists()) {
-      return const SyncResult(uploaded: 0, failed: 0, skipped: 0);
+      return SyncResult(lastError: 'The folder for "${link.name}" is missing or unreadable.');
     }
 
     final telegram = TelegramService(botToken: botToken, channelId: link.channelId);
     final db = DatabaseService.instance;
+    final tracked = await db.getTrackedPaths(link.channelId);
 
     var uploaded = 0;
     var failed = 0;
     var skipped = 0;
+    var tooLarge = 0;
+    var consecutiveFailures = 0;
+    var timedOut = false;
+    String? lastError;
 
-    await for (final entity in folder.list(recursive: true, followLinks: false)) {
-      if (entity is! File) continue;
+    // Collect first: a folder we cannot fully read (for example a subfolder
+    // without permission) should not abort the whole scan.
+    final candidates = <File>[];
+    await for (final entity in folder
+        .list(recursive: true, followLinks: false)
+        .handleError((Object _) {}, test: (e) => e is FileSystemException)) {
+      if (entity is File) candidates.add(entity);
+    }
+
+    for (final entity in candidates) {
+      if (deadline != null && DateTime.now().isAfter(deadline)) {
+        timedOut = true;
+        break;
+      }
+
       final path = entity.path;
-      final fileName = path.split(Platform.pathSeparator).last;
+      final fileName = p.basename(path);
+      if (fileName.startsWith('.') || _isTemporary(fileName)) continue;
+      if (tracked.contains(path)) continue;
 
-      if (fileName.startsWith('.')) continue;
-      if (await db.existsByLocalPath(path)) continue;
-
-      int length;
+      FileStat stat;
       try {
-        length = await entity.length();
+        stat = await entity.stat();
       } catch (_) {
         skipped++;
         continue;
       }
-      if (length <= 0 || length > AppConstants.maxUploadBytes) {
+      if (stat.type != FileSystemEntityType.file) continue;
+      if (stat.size <= 0) {
         skipped++;
+        continue;
+      }
+      if (stat.size > AppConstants.maxUploadBytes) {
+        tooLarge++;
+        continue;
+      }
+      if (DateTime.now().difference(stat.modified) < AppConstants.syncSettleTime) {
+        skipped++; // Probably still being written; the next run will get it.
         continue;
       }
 
       final category = FileTypeHelper.categoryForFileName(fileName);
-
       try {
         final result = await telegram.uploadFile(
           file: entity,
           fileName: fileName,
           category: category,
+          keepPhotoOriginal: keepPhotoOriginal,
         );
         await db.insertFile(
           FileItem(
@@ -140,16 +234,40 @@ class SyncService {
             fileSizeBytes: result.fileSize,
             mimeType: FileTypeHelper.mimeTypeForFileName(fileName),
             localPath: path,
+            sourcePath: path,
             uploadedAt: DateTime.now(),
             channelId: link.channelId,
           ),
         );
+        tracked.add(path);
         uploaded++;
-      } catch (_) {
+        consecutiveFailures = 0;
+      } catch (e) {
         failed++;
+        consecutiveFailures++;
+        lastError = friendlyError(e);
+
+        // A rejected token or a channel the bot was removed from will fail
+        // every remaining file the same way - stop instead of hammering.
+        final fatal = e is TelegramApiException &&
+            (e.errorCode == 401 || e.errorCode == 403);
+        if (fatal || consecutiveFailures >= 3) break;
       }
+
+      await Future<void>.delayed(AppConstants.syncUploadGap);
     }
 
-    return SyncResult(uploaded: uploaded, failed: failed, skipped: skipped);
+    if (link.id != null) {
+      await db.updateSyncLinkLastSynced(link.id!, DateTime.now());
+    }
+
+    return SyncResult(
+      uploaded: uploaded,
+      failed: failed,
+      skipped: skipped,
+      tooLarge: tooLarge,
+      timedOut: timedOut,
+      lastError: lastError,
+    );
   }
 }

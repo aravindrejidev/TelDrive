@@ -1,37 +1,38 @@
 import 'package:flutter/material.dart';
+import '../theme/neu_theme.dart';
 import '../utils/constants.dart';
+import '../widgets/neu/neu_controls.dart';
+import '../widgets/neu/neu_surface.dart';
 
 class SplashScreen extends StatelessWidget {
   const SplashScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final c = context.neu;
     return Scaffold(
       body: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 84,
-              height: 84,
-              decoration: BoxDecoration(
-                color: theme.colorScheme.primary,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Icon(
-                Icons.cloud_upload_rounded,
-                color: theme.colorScheme.onPrimary,
-                size: 44,
-              ),
+            const NeuSurface(
+              radius: 99,
+              width: 112,
+              height: 112,
+              distance: 10,
+              blur: 24,
+              child: Center(child: GradientIcon(Icons.cloud_rounded, size: 54)),
             ),
-            const SizedBox(height: 20),
-            Text(AppConstants.appName, style: theme.textTheme.headlineSmall),
-            const SizedBox(height: 24),
-            const SizedBox(
-              width: 28,
-              height: 28,
-              child: CircularProgressIndicator(strokeWidth: 3),
+            const SizedBox(height: 28),
+            Text(
+              AppConstants.appName,
+              style: Theme.of(context).textTheme.headlineMedium,
+            ),
+            const SizedBox(height: 26),
+            SizedBox(
+              width: 26,
+              height: 26,
+              child: CircularProgressIndicator(strokeWidth: 3, color: c.accent),
             ),
           ],
         ),

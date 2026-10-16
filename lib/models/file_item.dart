@@ -60,6 +60,7 @@ class FileItem {
     required this.fileSizeBytes,
     this.mimeType,
     this.localPath,
+    this.sourcePath,
     required this.uploadedAt,
     this.status = UploadStatus.uploaded,
     this.channelId,
@@ -74,6 +75,11 @@ class FileItem {
   final int fileSizeBytes;
   final String? mimeType;
   final String? localPath;
+
+  /// The device path this file was uploaded from. Unlike [localPath] it is
+  /// never overwritten (a later re-download changes [localPath] only), so Sync
+  /// can always tell that this path has already been uploaded.
+  final String? sourcePath;
   final DateTime uploadedAt;
   final UploadStatus status;
   final String? channelId;
@@ -89,6 +95,7 @@ class FileItem {
     String? mimeType,
     bool clearLocalPath = false,
     String? localPath,
+    String? sourcePath,
     DateTime? uploadedAt,
     UploadStatus? status,
     String? channelId,
@@ -103,6 +110,7 @@ class FileItem {
       fileSizeBytes: fileSizeBytes ?? this.fileSizeBytes,
       mimeType: mimeType ?? this.mimeType,
       localPath: clearLocalPath ? null : (localPath ?? this.localPath),
+      sourcePath: sourcePath ?? this.sourcePath,
       uploadedAt: uploadedAt ?? this.uploadedAt,
       status: status ?? this.status,
       channelId: channelId ?? this.channelId,
@@ -120,6 +128,7 @@ class FileItem {
       'file_size': fileSizeBytes,
       'mime_type': mimeType,
       'local_path': localPath,
+      'source_path': sourcePath,
       'uploaded_at': uploadedAt.toIso8601String(),
       'status': status.dbValue,
       'channel_id': channelId,
@@ -137,9 +146,17 @@ class FileItem {
       fileSizeBytes: map['file_size'] as int? ?? 0,
       mimeType: map['mime_type'] as String?,
       localPath: map['local_path'] as String?,
+      sourcePath: map['source_path'] as String?,
       uploadedAt: DateTime.parse(map['uploaded_at'] as String),
       status: UploadStatusX.fromDbValue(map['status'] as String? ?? 'uploaded'),
       channelId: map['channel_id'] as String?,
     );
   }
+}
+
+/// Count and total size of the files in one category.
+class CategoryStat {
+  const CategoryStat(this.count, this.bytes);
+  final int count;
+  final int bytes;
 }

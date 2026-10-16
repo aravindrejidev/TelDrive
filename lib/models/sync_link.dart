@@ -16,6 +16,7 @@ class SyncLink {
     required this.folderPath,
     this.autoSyncEnabled = false,
     required this.createdAt,
+    this.lastSyncedAt,
   });
 
   final int? id;
@@ -24,6 +25,7 @@ class SyncLink {
   final String folderPath;
   final bool autoSyncEnabled;
   final DateTime createdAt;
+  final DateTime? lastSyncedAt;
 
   SyncLink copyWith({
     int? id,
@@ -32,6 +34,7 @@ class SyncLink {
     String? folderPath,
     bool? autoSyncEnabled,
     DateTime? createdAt,
+    DateTime? lastSyncedAt,
   }) {
     return SyncLink(
       id: id ?? this.id,
@@ -40,6 +43,7 @@ class SyncLink {
       folderPath: folderPath ?? this.folderPath,
       autoSyncEnabled: autoSyncEnabled ?? this.autoSyncEnabled,
       createdAt: createdAt ?? this.createdAt,
+      lastSyncedAt: lastSyncedAt ?? this.lastSyncedAt,
     );
   }
 
@@ -51,6 +55,7 @@ class SyncLink {
       'folder_path': folderPath,
       'auto_sync_enabled': autoSyncEnabled ? 1 : 0,
       'created_at': createdAt.toIso8601String(),
+      'last_synced_at': lastSyncedAt?.toIso8601String(),
     };
   }
 
@@ -62,6 +67,9 @@ class SyncLink {
       folderPath: map['folder_path'] as String,
       autoSyncEnabled: (map['auto_sync_enabled'] as int? ?? 0) == 1,
       createdAt: DateTime.parse(map['created_at'] as String),
+      lastSyncedAt: map['last_synced_at'] == null
+          ? null
+          : DateTime.tryParse(map['last_synced_at'] as String),
     );
   }
 }

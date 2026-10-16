@@ -7,8 +7,13 @@ import '../../providers/file_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../services/permission_service.dart';
 import '../../services/sync_service.dart';
+import '../../theme/neu_theme.dart';
+import '../../utils/constants.dart';
+import '../../utils/formatters.dart';
+import '../../utils/helpers.dart';
 import '../../widgets/confirm_dialog.dart';
-import '../onboarding/setup_screen.dart';
+import '../../widgets/neu/neu_controls.dart';
+import '../../widgets/neu/neu_surface.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -19,54 +24,92 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   bool _isSyncing = false;
-  String? _syncResultMessage;
+  int? _syncingLinkId;
+  String? _syncMessage;
+  bool _syncMessageIsError = false;
 
   static const _frequencyOptions = [15, 30, 60, 180, 360, 720, 1440];
 
-  String _frequencyLabel(int minutes) {
+  static String _frequencyLabel(int minutes) {
     if (minutes < 60) return '$minutes minutes';
-    if (minutes < 1440) return '${minutes ~/ 60} hour${minutes >= 120 ? 's' : ''}';
-    return '${minutes ~/ 1440} day${minutes >= 2880 ? 's' : ''}';
+    if (minutes < 1440) {
+      final hours = minutes ~/ 60;
+      return hours == 1 ? '1 hour' : '$hours hours';
+    }
+    final days = minutes ~/ 1440;
+    return days == 1 ? '1 day' : '$days days';
   }
 
-  Future<void> _syncNow() async {
+  String _describe(SyncResult r) {
+    if (r.busy) return 'A sync is already running. Try again in a moment.';
+
+    final parts = <String>[
+      if (r.uploaded > 0) '${r.uploaded} uploaded',
+      if (r.failed > 0) '${r.failed} failed',
+      if (r.tooLarge > 0) '${r.tooLarge} over the 50 MB limit',
+      if (r.skipped > 0) '${r.skipped} will be retried later',
+    ];
+    if (parts.isEmpty) return r.lastError ?? 'Everything is already synced.';
+
+    var text = '${parts.join(', ')}.';
+    if (r.lastError != null) text = '$text ${r.lastError}';
+    if (r.timedOut) text = '$text Some files are left for the next run.';
+    return text;
+  }
+
+  Future<void> _runSync(Future<SyncResult> Function() action, {int? linkId}) async {
+    final settings = context.read<SettingsProvider>();
+    final files = context.read<FileProvider>();
     setState(() {
       _isSyncing = true;
-      _syncResultMessage = null;
+      _syncingLinkId = linkId;
+      _syncMessage = null;
     });
-    final result = await SyncService.instance.runAllLinksNow();
-    if (!mounted) return;
-    await context.read<FileProvider>().loadAll();
-    setState(() {
-      _isSyncing = false;
-      _syncResultMessage = result.totalConsidered == 0
-          ? 'No new files found across your Sync Links.'
-          : 'Uploaded ${result.uploaded}, failed ${result.failed}, skipped ${result.skipped}.';
-    });
+    try {
+      final result = await action();
+      await files.loadAll();
+      await settings.refreshSyncLinks();
+      if (!mounted) return;
+      setState(() {
+        _syncMessage = _describe(result);
+        _syncMessageIsError = result.failed > 0 || result.lastError != null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _syncMessage = friendlyError(e);
+        _syncMessageIsError = true;
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSyncing = false;
+          _syncingLinkId = null;
+        });
+      }
+    }
   }
 
   Future<void> _signOut(SettingsProvider settings) async {
     final confirmed = await showConfirmDialog(
       context,
       title: 'Disconnect this bot?',
-      message: 'You\'ll need to re-enter your Bot Token and Channel ID to use '
-          'TeleDrive again. Files already uploaded to Telegram are not affected.',
+      message: 'You will need to enter the Bot Token and Channel ID again to use '
+          '${AppConstants.appName}. Files already in Telegram are not touched.',
       confirmLabel: 'Disconnect',
       destructive: true,
+      icon: Icons.link_off_rounded,
     );
-    if (confirmed != true) return;
+    if (confirmed != true || !mounted) return;
+    // The app gate swaps Home for the setup screen once the state changes, so
+    // all that is left to do here is close Settings.
+    Navigator.of(context).popUntil((route) => route.isFirst);
     await settings.signOut();
-    if (mounted) {
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const SetupScreen()),
-        (route) => false,
-      );
-    }
   }
 
   Future<void> _openAddLinkDialog(SettingsProvider settings) async {
-    await showDialog<void>(
-      context: context,
+    await showNeuDialog<void>(
+      context,
       builder: (_) => _AddSyncLinkDialog(settings: settings),
     );
   }
@@ -75,213 +118,521 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final confirmed = await showConfirmDialog(
       context,
       title: 'Remove "${link.name}"?',
-      message: 'This stops syncing this folder. Files already uploaded through '
-          'it stay in Telegram and in TeleDrive.',
+      message: 'This stops syncing the folder. Files already uploaded stay in '
+          'Telegram and in ${AppConstants.appName}.',
       confirmLabel: 'Remove',
       destructive: true,
     );
-    if (confirmed == true) {
-      await settings.removeSyncLink(link);
-    }
+    if (confirmed == true) await settings.removeSyncLink(link);
+  }
+
+  Future<void> _pickFrequency(SettingsProvider settings) async {
+    final picked = await showNeuSheet<int>(
+      context,
+      builder: (sheetContext) {
+        final c = sheetContext.neu;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('Check for new files', style: Theme.of(sheetContext).textTheme.titleLarge),
+            const SizedBox(height: 4),
+            Text(
+              'Android allows background checks at most every 15 minutes.',
+              style: TextStyle(fontSize: 14, color: c.textMuted),
+            ),
+            const SizedBox(height: 10),
+            for (final minutes in _frequencyOptions)
+              NeuListRow(
+                icon: Icons.timer_outlined,
+                title: 'Every ${_frequencyLabel(minutes)}',
+                trailing: minutes == settings.syncFrequencyMinutes
+                    ? Icon(Icons.check_circle_rounded, color: c.accent)
+                    : null,
+                onTap: () => Navigator.of(sheetContext).pop(minutes),
+              ),
+          ],
+        );
+      },
+    );
+    if (picked != null) await settings.setSyncFrequencyMinutes(picked);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Settings')),
-      body: Consumer<SettingsProvider>(
-        builder: (context, settings, _) {
-          return ListView(
-            children: [
-              const _SectionHeader('Telegram Connection'),
-              ListTile(
-                leading: const Icon(Icons.key_rounded),
-                title: const Text('Bot Token'),
-                subtitle: Text(_maskToken(settings.botToken)),
-              ),
-              ListTile(
-                leading: const Icon(Icons.campaign_rounded),
-                title: const Text('Primary Channel ID'),
-                subtitle: Text(settings.channelId ?? '—'),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Text(
-                  'Used for manual uploads from the Photos/Videos/Audio/Documents tabs.',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+      body: SafeArea(
+        child: Column(
+          children: [
+            NeuPageHeader(
+              title: 'Settings',
+              onBack: () => Navigator.of(context).pop(),
+            ),
+            Expanded(
+              child: Consumer<SettingsProvider>(
+                builder: (context, settings, _) => ListView(
+                  padding: const EdgeInsets.only(bottom: 36),
+                  children: [
+                    const NeuSectionTitle('Telegram connection'),
+                    _buildConnection(context, settings),
+                    const NeuSectionTitle('Appearance and uploads'),
+                    _buildPreferences(context, settings),
+                    const NeuSectionTitle('Sync links'),
+                    ..._buildSyncLinks(context, settings),
+                    const NeuSectionTitle('Storage'),
+                    _buildStorage(context),
+                    const SizedBox(height: 28),
+                    Center(
+                      child: Text(
+                        '${AppConstants.appName} ${AppConstants.appVersion}',
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                          color: context.neu.textMuted,
+                        ),
                       ),
+                    ),
+                  ],
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                child: OutlinedButton.icon(
-                  onPressed: () => _signOut(settings),
-                  icon: const Icon(Icons.logout_rounded),
-                  label: const Text('Disconnect Bot'),
-                ),
-              ),
-              const Divider(),
-              const _SectionHeader('Sync Links'),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Text(
-                  'Link any number of device folders to their own Telegram '
-                  'channels — e.g. a Music folder to a Music channel — and '
-                  'each syncs independently in the background.',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              if (settings.syncLinks.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  child: Text('No Sync Links yet.'),
-                )
-              else
-                ...settings.syncLinks.map(
-                  (link) => _SyncLinkTile(
-                    link: link,
-                    onToggle: (enabled) => settings.setSyncLinkAutoSync(link, enabled),
-                    onRemove: () => _removeLink(settings, link),
-                  ),
-                ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: OutlinedButton.icon(
-                  onPressed: () => _openAddLinkDialog(settings),
-                  icon: const Icon(Icons.add_rounded),
-                  label: const Text('Add Sync Link'),
-                ),
-              ),
-              if (settings.hasAnyAutoSyncEnabled)
-                ListTile(
-                  leading: const Icon(Icons.timer_outlined),
-                  title: const Text('Sync Frequency'),
-                  subtitle: const Text('Applies to every Sync Link with Auto-Sync on'),
-                  trailing: DropdownButton<int>(
-                    value: settings.syncFrequencyMinutes,
-                    items: _frequencyOptions
-                        .map((m) => DropdownMenuItem(value: m, child: Text(_frequencyLabel(m))))
-                        .toList(),
-                    onChanged: (value) {
-                      if (value != null) settings.setSyncFrequencyMinutes(value);
-                    },
-                  ),
-                ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                child: FilledButton.tonalIcon(
-                  onPressed: (settings.syncLinks.isEmpty || _isSyncing) ? null : _syncNow,
-                  icon: _isSyncing
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.sync_rounded),
-                  label: Text(_isSyncing ? 'Syncing…' : 'Sync Now (all links)'),
-                ),
-              ),
-              if (_syncResultMessage != null)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Text(
-                    _syncResultMessage!,
-                    style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
-                  ),
-                ),
-              const SizedBox(height: 8),
-              const Divider(),
-              const _SectionHeader('Storage Overview'),
-              FutureBuilder(
-                future: context.read<FileProvider>().getCounts(),
-                builder: (context, snapshot) {
-                  final counts = snapshot.data;
-                  if (counts == null) return const SizedBox.shrink();
-                  return Column(
-                    children: counts.entries
-                        .map((e) => ListTile(
-                              dense: true,
-                              title: Text(e.key.label),
-                              trailing: Text('${e.value}'),
-                            ))
-                        .toList(),
-                  );
-                },
-              ),
-              const SizedBox(height: 24),
-            ],
-          );
-        },
+            ),
+          ],
+        ),
       ),
     );
   }
 
+  Widget _card({required Widget child}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: NeuSurface(
+        radius: 28,
+        distance: 7,
+        blur: 16,
+        padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
+        child: child,
+      ),
+    );
+  }
+
+  Widget _buildConnection(BuildContext context, SettingsProvider settings) {
+    final c = context.neu;
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          NeuListRow(
+            icon: Icons.key_rounded,
+            title: 'Bot token',
+            subtitle: _maskToken(settings.botToken),
+          ),
+          NeuListRow(
+            icon: Icons.campaign_rounded,
+            title: 'Main channel',
+            subtitle: settings.channelId ?? 'Not set',
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 4, 4, 16),
+            child: Text(
+              'Uploads from the Photos, Videos, Audio and Documents tabs go here.',
+              style: TextStyle(fontSize: 13, height: 1.4, color: c.textMuted),
+            ),
+          ),
+          NeuButton(
+            label: 'Disconnect bot',
+            icon: Icons.link_off_rounded,
+            height: 50,
+            style: NeuButtonStyle.danger,
+            onPressed: () => _signOut(settings),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPreferences(BuildContext context, SettingsProvider settings) {
+    final c = context.neu;
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 10),
+            child: Text(
+              'Theme',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: c.text),
+            ),
+          ),
+          NeuSegmented<ThemeMode>(
+            selected: settings.themeMode,
+            onChanged: settings.setThemeMode,
+            options: const [
+              NeuSegment(
+                value: ThemeMode.system,
+                label: 'System',
+                icon: Icons.brightness_auto_rounded,
+              ),
+              NeuSegment(
+                value: ThemeMode.light,
+                label: 'Light',
+                icon: Icons.light_mode_rounded,
+              ),
+              NeuSegment(
+                value: ThemeMode.dark,
+                label: 'Dark',
+                icon: Icons.dark_mode_rounded,
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          NeuListRow(
+            icon: Icons.high_quality_rounded,
+            title: 'Original photo quality',
+            subtitle: 'Sends photos as files so Telegram does not compress them.',
+            trailing: NeuSwitch(
+              value: settings.keepPhotoOriginal,
+              onChanged: settings.setKeepPhotoOriginal,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildSyncLinks(BuildContext context, SettingsProvider settings) {
+    final c = context.neu;
+    return [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(26, 0, 26, 14),
+        child: Text(
+          'Link a folder on this phone to a channel, for example a Music '
+          'folder to a Music channel. New files upload on their own.',
+          style: TextStyle(fontSize: 13.5, height: 1.45, color: c.textMuted),
+        ),
+      ),
+      if (settings.syncLinks.isEmpty)
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: NeuSurface(
+            depth: NeuDepth.inset,
+            radius: 24,
+            distance: 5,
+            blur: 12,
+            padding: const EdgeInsets.all(20),
+            child: Row(
+              children: [
+                Icon(Icons.folder_off_rounded, color: c.textMuted),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Text(
+                    'No sync links yet.',
+                    style: TextStyle(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w600,
+                      color: c.textMuted,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        )
+      else
+        for (final link in settings.syncLinks)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+            child: _SyncLinkCard(
+              link: link,
+              syncing: _isSyncing && (_syncingLinkId == link.id || _syncingLinkId == null),
+              busy: _isSyncing,
+              onToggle: (enabled) => settings.setSyncLinkAutoSync(link, enabled),
+              onRemove: () => _removeLink(settings, link),
+              onSync: () => _runSync(
+                () => SyncService.instance.runLinkNow(link),
+                linkId: link.id,
+              ),
+            ),
+          ),
+      const SizedBox(height: 4),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: NeuButton(
+          label: 'Add sync link',
+          icon: Icons.add_rounded,
+          height: 52,
+          style: NeuButtonStyle.secondary,
+          onPressed: () => _openAddLinkDialog(settings),
+        ),
+      ),
+      if (settings.hasAnyAutoSyncEnabled)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+          child: NeuSurface(
+            radius: 24,
+            distance: 6,
+            blur: 14,
+            padding: const EdgeInsets.fromLTRB(16, 6, 12, 6),
+            child: NeuListRow(
+              icon: Icons.timer_outlined,
+              title: 'Check every ${_frequencyLabel(settings.syncFrequencyMinutes)}',
+              subtitle: 'Applies to every link with auto-sync on.',
+              trailing: Icon(Icons.chevron_right_rounded, color: c.textMuted),
+              onTap: () => _pickFrequency(settings),
+            ),
+          ),
+        ),
+      if (settings.syncLinks.isNotEmpty) ...[
+        const SizedBox(height: 16),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: NeuButton(
+            label: (_isSyncing && _syncingLinkId == null) ? 'Syncing…' : 'Sync all now',
+            icon: Icons.sync_rounded,
+            loading: _isSyncing && _syncingLinkId == null,
+            onPressed: _isSyncing
+                ? null
+                : () => _runSync(() => SyncService.instance.runAllLinksNow()),
+          ),
+        ),
+      ],
+      if (_syncMessage != null)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+          child: NeuSurface(
+            depth: NeuDepth.inset,
+            radius: 22,
+            distance: 4,
+            blur: 10,
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  _syncMessageIsError
+                      ? Icons.error_outline_rounded
+                      : Icons.check_circle_outline_rounded,
+                  size: 20,
+                  color: _syncMessageIsError ? c.danger : c.success,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    _syncMessage!,
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      height: 1.45,
+                      fontWeight: FontWeight.w600,
+                      color: _syncMessageIsError ? c.danger : c.text,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+    ];
+  }
+
+  Widget _buildStorage(BuildContext context) {
+    final c = context.neu;
+    return Consumer<FileProvider>(
+      builder: (context, files, _) {
+        final total = files.totalBytes;
+        return _card(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SizedBox(height: 6),
+              Text(
+                Formatters.fileSize(total),
+                style: Theme.of(context).textTheme.headlineSmall,
+              ),
+              const SizedBox(height: 2),
+              Text(
+                '${files.totalCount} files in Telegram',
+                style: TextStyle(fontSize: 13.5, color: c.textMuted),
+              ),
+              const SizedBox(height: 18),
+              for (final category in FileCategory.values)
+                _StorageRow(
+                  label: category.label,
+                  stat: files.statsFor(category),
+                  fraction: total == 0 ? 0 : files.statsFor(category).bytes / total,
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   String _maskToken(String? token) {
-    if (token == null || token.isEmpty) return '—';
+    if (token == null || token.isEmpty) return 'Not set';
     final colonIndex = token.indexOf(':');
     if (colonIndex == -1 || colonIndex + 5 > token.length) return '••••••••';
     return '${token.substring(0, colonIndex)}:${token.substring(colonIndex + 1, colonIndex + 5)}••••';
   }
 }
 
-class _SyncLinkTile extends StatelessWidget {
-  const _SyncLinkTile({required this.link, required this.onToggle, required this.onRemove});
+class _StorageRow extends StatelessWidget {
+  const _StorageRow({required this.label, required this.stat, required this.fraction});
 
-  final SyncLink link;
-  final ValueChanged<bool> onToggle;
-  final VoidCallback onRemove;
+  final String label;
+  final CategoryStat stat;
+  final double fraction;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(link.name, style: theme.textTheme.titleSmall),
+    final c = context.neu;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: c.text),
                 ),
-                IconButton(
-                  icon: Icon(Icons.delete_outline_rounded, color: theme.colorScheme.error),
-                  onPressed: onRemove,
-                  visualDensity: VisualDensity.compact,
+              ),
+              Text(
+                '${stat.count} files, ${Formatters.fileSize(stat.bytes)}',
+                style: TextStyle(fontSize: 13, color: c.textMuted),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          NeuProgressBar(value: fraction, height: 10),
+        ],
+      ),
+    );
+  }
+}
+
+class _SyncLinkCard extends StatelessWidget {
+  const _SyncLinkCard({
+    required this.link,
+    required this.syncing,
+    required this.busy,
+    required this.onToggle,
+    required this.onRemove,
+    required this.onSync,
+  });
+
+  final SyncLink link;
+  final bool syncing;
+  final bool busy;
+  final ValueChanged<bool> onToggle;
+  final VoidCallback onRemove;
+  final VoidCallback onSync;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.neu;
+    final lastSynced = link.lastSyncedAt;
+
+    return NeuSurface(
+      radius: 28,
+      distance: 7,
+      blur: 16,
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  link.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(fontSize: 17),
                 ),
-              ],
-            ),
-            Text(
-              link.folderPath,
+              ),
+              const SizedBox(width: 10),
+              if (syncing)
+                SizedBox(
+                  width: 40,
+                  height: 40,
+                  child: Center(
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2.4, color: c.accent),
+                    ),
+                  ),
+                )
+              else
+                NeuIconButton(
+                  icon: Icons.sync_rounded,
+                  size: 40,
+                  iconSize: 19,
+                  tooltip: 'Sync this link now',
+                  onTap: busy ? null : onSync,
+                ),
+              const SizedBox(width: 10),
+              NeuIconButton(
+                icon: Icons.delete_outline_rounded,
+                size: 40,
+                iconSize: 19,
+                color: c.danger,
+                tooltip: 'Remove link',
+                onTap: onRemove,
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _MetaLine(icon: Icons.folder_rounded, text: link.folderPath),
+          _MetaLine(icon: Icons.campaign_rounded, text: link.channelId),
+          _MetaLine(
+            icon: Icons.schedule_rounded,
+            text: lastSynced == null
+                ? 'Not synced yet'
+                : 'Synced ${Formatters.relativeTime(lastSynced)}',
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Auto-sync',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: c.text),
+                ),
+              ),
+              NeuSwitch(value: link.autoSyncEnabled, onChanged: onToggle),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MetaLine extends StatelessWidget {
+  const _MetaLine({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.neu;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: c.textMuted),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
+              style: TextStyle(fontSize: 13, color: c.textMuted),
             ),
-            Text(
-              '→ ${link.channelId}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              dense: true,
-              title: const Text('Auto-Sync'),
-              value: link.autoSyncEnabled,
-              onChanged: onToggle,
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -289,6 +640,7 @@ class _SyncLinkTile extends StatelessWidget {
 
 class _AddSyncLinkDialog extends StatefulWidget {
   const _AddSyncLinkDialog({required this.settings});
+
   final SettingsProvider settings;
 
   @override
@@ -314,16 +666,28 @@ class _AddSyncLinkDialogState extends State<_AddSyncLinkDialog> {
     final hasAccess = await PermissionService.instance.hasAllFilesAccess();
     if (!hasAccess) {
       final granted = await PermissionService.instance.requestAllFilesAccess();
-      if (!granted) return;
+      if (!granted) {
+        if (mounted) {
+          setState(() => _errorMessage =
+              'Allow access to all files so ${AppConstants.appName} can read the folder.');
+        }
+        return;
+      }
     }
     final path = await FilePicker.getDirectoryPath();
-    if (path != null) setState(() => _folderPath = path);
+    if (path != null && mounted) {
+      setState(() {
+        _folderPath = path;
+        _errorMessage = null;
+      });
+    }
   }
 
   Future<void> _save() async {
+    FocusScope.of(context).unfocus();
     if (!_formKey.currentState!.validate()) return;
     if (_folderPath == null) {
-      setState(() => _errorMessage = 'Please select a folder to sync.');
+      setState(() => _errorMessage = 'Choose the folder to sync.');
       return;
     }
     setState(() {
@@ -338,7 +702,7 @@ class _AddSyncLinkDialogState extends State<_AddSyncLinkDialog> {
       );
       if (mounted) Navigator.of(context).pop();
     } catch (e) {
-      setState(() => _errorMessage = e.toString());
+      if (mounted) setState(() => _errorMessage = friendlyError(e));
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -346,91 +710,83 @@ class _AddSyncLinkDialogState extends State<_AddSyncLinkDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Add Sync Link'),
-      content: Form(
-        key: _formKey,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              TextFormField(
-                controller: _nameController,
-                decoration: const InputDecoration(labelText: 'Name (e.g. Lossless Music)'),
-                validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _channelController,
-                decoration: const InputDecoration(
-                  labelText: 'Target Channel ID',
-                  hintText: '@my_music_channel or -100...',
-                ),
-                validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Make sure the bot is also added as admin to this channel.',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: _pickFolder,
-                icon: const Icon(Icons.folder_open_rounded),
-                label: Text(_folderPath == null ? 'Select Folder' : 'Change Folder'),
-              ),
-              if (_folderPath != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Text(
-                    _folderPath!,
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ),
-              if (_errorMessage != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: Text(
-                    _errorMessage!,
-                    style: TextStyle(color: Theme.of(context).colorScheme.error),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
+    final c = context.neu;
+    return NeuDialogCard(
+      title: 'Add sync link',
+      icon: Icons.sync_alt_rounded,
       actions: [
-        TextButton(
+        NeuButton(
+          label: 'Cancel',
+          height: 50,
+          style: NeuButtonStyle.secondary,
           onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
         ),
-        FilledButton(
-          onPressed: _isSaving ? null : _save,
-          child: _isSaving
-              ? const SizedBox(
-                  width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-              : const Text('Save'),
+        NeuButton(
+          label: _isSaving ? 'Checking…' : 'Save',
+          height: 50,
+          loading: _isSaving,
+          onPressed: _save,
         ),
       ],
-    );
-  }
-}
-
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader(this.title);
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-      child: Text(
-        title,
-        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-              color: Theme.of(context).colorScheme.primary,
-              fontWeight: FontWeight.bold,
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            NeuTextField(
+              controller: _nameController,
+              label: 'Name',
+              hint: 'Lossless music',
+              textInputAction: TextInputAction.next,
+              validator: (v) => (v == null || v.trim().isEmpty) ? 'Give this link a name' : null,
             ),
+            const SizedBox(height: 16),
+            NeuTextField(
+              controller: _channelController,
+              label: 'Channel',
+              hint: '@my_music_channel or -100…',
+              textInputAction: TextInputAction.done,
+              validator: (v) =>
+                  (v == null || v.trim().isEmpty) ? 'Enter a channel username or ID' : null,
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(6, 8, 6, 0),
+              child: Text(
+                'Add the bot to this channel as an admin that can post.',
+                style: TextStyle(fontSize: 12.5, height: 1.4, color: c.textMuted),
+              ),
+            ),
+            const SizedBox(height: 16),
+            NeuButton(
+              label: _folderPath == null ? 'Choose folder' : 'Change folder',
+              icon: Icons.folder_open_rounded,
+              height: 48,
+              style: NeuButtonStyle.secondary,
+              onPressed: _pickFolder,
+            ),
+            if (_folderPath != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(6, 10, 6, 0),
+                child: Text(
+                  _folderPath!,
+                  style: TextStyle(fontSize: 12.5, height: 1.4, color: c.textMuted),
+                ),
+              ),
+            if (_errorMessage != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(6, 14, 6, 0),
+                child: Text(
+                  _errorMessage!,
+                  style: TextStyle(
+                    fontSize: 13,
+                    height: 1.4,
+                    fontWeight: FontWeight.w600,
+                    color: c.danger,
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

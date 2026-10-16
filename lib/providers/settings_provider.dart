@@ -1,20 +1,22 @@
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import '../models/sync_link.dart';
 import '../services/database_service.dart';
 import '../services/storage_service.dart';
 import '../services/sync_service.dart';
 import '../services/telegram_service.dart';
 import '../utils/constants.dart';
+import '../utils/helpers.dart';
 
 enum SettingsLoadState { loading, needsSetup, ready }
 
-/// Holds the primary Telegram credentials plus the full list of Sync Links.
+/// Holds the primary Telegram credentials, preferences and the full list of
+/// Sync Links.
 ///
-/// This is the only place that talks to [SyncService]'s
-/// schedule/cancel methods, so nothing else in the app has to remember to
-/// keep WorkManager's registration in sync with what's shown on screen — any
-/// change here (adding a link, toggling one, changing the shared frequency)
-/// re-evaluates whether the background task should be running at all.
+/// This is the only place that talks to [SyncService]'s schedule/cancel
+/// methods, so nothing else in the app has to remember to keep WorkManager's
+/// registration in step with what is shown on screen - any change here
+/// (adding a link, toggling one, changing the shared frequency, signing in
+/// again) re-evaluates whether the background task should be running.
 class SettingsProvider extends ChangeNotifier {
   final StorageService _storage = StorageService.instance;
   final DatabaseService _db = DatabaseService.instance;
@@ -25,6 +27,8 @@ class SettingsProvider extends ChangeNotifier {
   String? channelId;
   int syncFrequencyMinutes = AppConstants.defaultSyncFrequencyMinutes;
   List<SyncLink> syncLinks = [];
+  ThemeMode themeMode = ThemeMode.system;
+  bool keepPhotoOriginal = true;
 
   bool get isConfigured =>
       botToken != null && botToken!.isNotEmpty && channelId != null && channelId!.isNotEmpty;
@@ -36,8 +40,28 @@ class SettingsProvider extends ChangeNotifier {
     channelId = await _storage.getChannelId();
     syncFrequencyMinutes = await _storage.getSyncFrequencyMinutes();
     syncLinks = await _db.getAllSyncLinks();
+    themeMode = _themeModeFromName(await _storage.getThemeModeName());
+    keepPhotoOriginal = await _storage.getKeepPhotoOriginal();
     loadState = isConfigured ? SettingsLoadState.ready : SettingsLoadState.needsSetup;
     notifyListeners();
+  }
+
+  ThemeMode _themeModeFromName(String name) => switch (name) {
+        'light' => ThemeMode.light,
+        'dark' => ThemeMode.dark,
+        _ => ThemeMode.system,
+      };
+
+  Future<void> setThemeMode(ThemeMode mode) async {
+    themeMode = mode;
+    notifyListeners();
+    await _storage.setThemeModeName(mode.name);
+  }
+
+  Future<void> setKeepPhotoOriginal(bool keep) async {
+    keepPhotoOriginal = keep;
+    notifyListeners();
+    await _storage.setKeepPhotoOriginal(keep);
   }
 
   /// Validates the credentials against the real Telegram API before saving
@@ -47,21 +71,30 @@ class SettingsProvider extends ChangeNotifier {
     required String newChannelId,
   }) async {
     final trimmedToken = newBotToken.trim();
-    final trimmedChannel = newChannelId.trim();
+    final normalizedChannel = normalizeChannelId(newChannelId);
 
-    await TelegramService(botToken: trimmedToken, channelId: trimmedChannel)
+    await TelegramService(botToken: trimmedToken, channelId: normalizedChannel)
         .testConnection();
 
-    await _storage.saveCredentials(botToken: trimmedToken, channelId: trimmedChannel);
+    await _storage.saveCredentials(botToken: trimmedToken, channelId: normalizedChannel);
     botToken = trimmedToken;
-    channelId = trimmedChannel;
+    channelId = normalizedChannel;
+
+    // Sync Links survive a disconnect, so signing in again must bring the
+    // background schedule back to match them.
+    try {
+      await _reconcileAutoSyncSchedule();
+    } catch (_) {}
+
     loadState = SettingsLoadState.ready;
     notifyListeners();
   }
 
   Future<void> signOut() async {
     await _storage.clearCredentials();
-    await SyncService.instance.cancelAutoSync();
+    try {
+      await SyncService.instance.cancelAutoSync();
+    } catch (_) {}
     botToken = null;
     channelId = null;
     loadState = SettingsLoadState.needsSetup;
@@ -77,13 +110,21 @@ class SettingsProvider extends ChangeNotifier {
     required String folderPath,
   }) async {
     final token = botToken;
-    if (token == null) return;
-    final trimmedChannel = targetChannelId.trim();
-    await TelegramService(botToken: token, channelId: trimmedChannel).testConnection();
+    if (token == null) throw AppException('Connect your bot first.');
+    final normalizedChannel = normalizeChannelId(targetChannelId);
+
+    final duplicate = syncLinks.any(
+      (l) => l.folderPath == folderPath && l.channelId == normalizedChannel,
+    );
+    if (duplicate) {
+      throw AppException('That folder is already linked to this channel.');
+    }
+
+    await TelegramService(botToken: token, channelId: normalizedChannel).testConnection();
 
     final link = SyncLink(
       name: name.trim(),
-      channelId: trimmedChannel,
+      channelId: normalizedChannel,
       folderPath: folderPath,
       createdAt: DateTime.now(),
     );
@@ -113,6 +154,13 @@ class SettingsProvider extends ChangeNotifier {
     syncFrequencyMinutes = minutes;
     await _storage.setSyncFrequencyMinutes(minutes);
     await _reconcileAutoSyncSchedule();
+    notifyListeners();
+  }
+
+  /// Re-reads the links, for example to show the new "last synced" time after
+  /// a manual sync.
+  Future<void> refreshSyncLinks() async {
+    syncLinks = await _db.getAllSyncLinks();
     notifyListeners();
   }
 

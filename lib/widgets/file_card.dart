@@ -1,8 +1,11 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import '../models/file_item.dart';
+import '../theme/neu_theme.dart';
 import '../utils/file_type_helper.dart';
 import '../utils/formatters.dart';
+import 'neu/neu_controls.dart';
+import 'neu/neu_surface.dart';
 
 class FileCard extends StatelessWidget {
   const FileCard({super.key, required this.item, required this.onTap});
@@ -14,20 +17,25 @@ class FileCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isImage = item.category == FileCategory.photo && _hasLocalCopy;
+    final c = context.neu;
+    final hasLocal = _hasLocalCopy;
+    final isImage = item.category == FileCategory.photo && hasLocal;
 
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 9),
+      child: NeuTap(
         onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(10),
+        semanticLabel: item.fileName,
+        builder: (context, pressed) => NeuSurface(
+          depth: pressed ? NeuDepth.inset : NeuDepth.raised,
+          radius: 26,
+          distance: 6,
+          blur: 14,
+          padding: const EdgeInsets.all(12),
           child: Row(
             children: [
-              _Thumbnail(item: item, isImage: isImage),
-              const SizedBox(width: 12),
+              _Thumbnail(item: item, showImage: isImage),
+              const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -36,21 +44,45 @@ class FileCard extends StatelessWidget {
                       item.fileName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${Formatters.fileSize(item.fileSizeBytes)} • ${Formatters.relativeTime(item.uploadedAt)}',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
+                      style: TextStyle(
+                        fontSize: 15.5,
+                        fontWeight: FontWeight.w700,
+                        color: c.text,
                       ),
                     ),
                     const SizedBox(height: 4),
-                    _StatusChip(hasLocalCopy: _hasLocalCopy),
+                    Row(
+                      children: [
+                        Text(
+                          Formatters.fileSize(item.fileSizeBytes),
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                            color: c.textMuted,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Flexible(
+                          child: Text(
+                            Formatters.relativeTime(item.uploadedAt),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 12.5, color: c.textMuted),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 9),
+                    NeuChip(
+                      icon: hasLocal ? Icons.smartphone_rounded : Icons.cloud_done_rounded,
+                      iconColor: hasLocal ? c.success : c.accent,
+                      label: hasLocal ? 'On this device' : 'On Telegram only',
+                    ),
                   ],
                 ),
               ),
-              Icon(Icons.chevron_right_rounded, color: theme.colorScheme.outline),
+              const SizedBox(width: 6),
+              Icon(Icons.chevron_right_rounded, color: c.textMuted),
             ],
           ),
         ),
@@ -60,68 +92,43 @@ class FileCard extends StatelessWidget {
 }
 
 class _Thumbnail extends StatelessWidget {
-  const _Thumbnail({required this.item, required this.isImage});
+  const _Thumbnail({required this.item, required this.showImage});
 
   final FileItem item;
-  final bool isImage;
+  final bool showImage;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final size = 52.0;
-    final borderRadius = BorderRadius.circular(10);
-
-    if (isImage) {
-      return ClipRRect(
-        borderRadius: borderRadius,
-        child: Image.file(
-          File(item.localPath!),
-          width: size,
-          height: size,
-          fit: BoxFit.cover,
-          cacheWidth: 150,
-          errorBuilder: (_, __, ___) => _iconBox(theme, size, borderRadius),
-        ),
-      );
-    }
-    return _iconBox(theme, size, borderRadius);
-  }
-
-  Widget _iconBox(ThemeData theme, double size, BorderRadius borderRadius) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: theme.colorScheme.primaryContainer.withValues(alpha: 0.5),
-        borderRadius: borderRadius,
-      ),
+    final c = context.neu;
+    final icon = Center(
       child: Icon(
         FileTypeHelper.iconForFile(item.fileName, item.category),
-        color: theme.colorScheme.primary,
+        size: 26,
+        color: c.accent,
       ),
     );
-  }
-}
 
-class _StatusChip extends StatelessWidget {
-  const _StatusChip({required this.hasLocalCopy});
-
-  final bool hasLocalCopy;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final color = hasLocalCopy ? theme.colorScheme.tertiary : theme.colorScheme.outline;
-    final icon = hasLocalCopy ? Icons.smartphone_rounded : Icons.cloud_done_rounded;
-    final label = hasLocalCopy ? 'On this device' : 'On Telegram only';
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 13, color: color),
-        const SizedBox(width: 4),
-        Text(label, style: theme.textTheme.labelSmall?.copyWith(color: color)),
-      ],
+    return NeuSurface(
+      depth: NeuDepth.inset,
+      radius: 20,
+      width: 60,
+      height: 60,
+      distance: 3,
+      blur: 7,
+      padding: const EdgeInsets.all(4),
+      child: showImage
+          ? ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Image.file(
+                File(item.localPath!),
+                width: double.infinity,
+                height: double.infinity,
+                fit: BoxFit.cover,
+                cacheWidth: 160,
+                errorBuilder: (_, __, ___) => icon,
+              ),
+            )
+          : icon,
     );
   }
 }

@@ -1,7 +1,7 @@
 name: telegram_cloud_storage
 description: "A Google Drive-style cloud storage app backed by the Telegram Bot API, with support for linking multiple channels to multiple sync folders."
 publish_to: 'none'
-version: 1.1.0+2
+version: 1.2.0+3
 
 environment:
   sdk: '>=3.10.0 <4.0.0'

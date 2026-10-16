@@ -2,9 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../providers/settings_provider.dart';
+import '../../theme/neu_theme.dart';
 import '../../utils/constants.dart';
-import '../home/home_screen.dart';
+import '../../utils/helpers.dart';
+import '../../widgets/neu/neu_controls.dart';
+import '../../widgets/neu/neu_surface.dart';
 
+/// First-run screen. When the credentials are saved, [SettingsProvider]
+/// flips to `ready` and the app gate swaps this screen for Home on its own,
+/// so there is no navigation to do here.
 class SetupScreen extends StatefulWidget {
   const SetupScreen({super.key});
 
@@ -13,6 +19,8 @@ class SetupScreen extends StatefulWidget {
 }
 
 class _SetupScreenState extends State<SetupScreen> {
+  // Optional: values baked in at build time with --dart-define. Anything put
+  // here ends up readable inside the APK, so only use it for private builds.
   static const _defaultBotToken = String.fromEnvironment('DEFAULT_BOT_TOKEN');
   static const _defaultChannelId = String.fromEnvironment('DEFAULT_CHANNEL_ID');
 
@@ -31,6 +39,7 @@ class _SetupScreenState extends State<SetupScreen> {
   }
 
   Future<void> _submit() async {
+    FocusScope.of(context).unfocus();
     if (!_formKey.currentState!.validate()) return;
     setState(() {
       _isSaving = true;
@@ -42,12 +51,8 @@ class _SetupScreenState extends State<SetupScreen> {
             newBotToken: _tokenController.text,
             newChannelId: _channelController.text,
           );
-      if (!mounted) return;
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const HomeScreen()),
-      );
     } catch (e) {
-      setState(() => _errorMessage = e.toString());
+      if (mounted) setState(() => _errorMessage = friendlyError(e));
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -55,112 +60,220 @@ class _SetupScreenState extends State<SetupScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final c = context.neu;
+    final textTheme = Theme.of(context).textTheme;
+
     return Scaffold(
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          padding: const EdgeInsets.fromLTRB(24, 28, 24, 32),
           child: Form(
             key: _formKey,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.cloud_upload_rounded, size: 48, color: theme.colorScheme.primary),
-                const SizedBox(height: 16),
-                Text('Connect your Telegram Bot', style: theme.textTheme.headlineSmall),
-                const SizedBox(height: 8),
-                Text(
-                  '${AppConstants.appName} stores your files by uploading them to a '
-                  'private Telegram channel through a bot you control. Nothing is '
-                  'sent to any other server.',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
+                const NeuSurface(
+                  radius: 99,
+                  width: 92,
+                  height: 92,
+                  distance: 9,
+                  blur: 20,
+                  child: Center(child: GradientIcon(Icons.cloud_rounded, size: 44)),
                 ),
                 const SizedBox(height: 28),
-                TextFormField(
+                Text('Connect your\nTelegram bot', style: textTheme.headlineMedium),
+                const SizedBox(height: 12),
+                Text(
+                  '${AppConstants.appName} keeps your files in a private Telegram '
+                  'channel, through a bot you control. Nothing is sent to any '
+                  'other server.',
+                  style: TextStyle(fontSize: 15, height: 1.5, color: c.textMuted),
+                ),
+                const SizedBox(height: 26),
+                const _StepsCard(),
+                const SizedBox(height: 28),
+                NeuTextField(
                   controller: _tokenController,
+                  label: 'Bot token',
+                  hint: '123456789:AAE…',
+                  icon: Icons.key_rounded,
                   obscureText: _obscureToken,
-                  decoration: InputDecoration(
-                    labelText: 'Bot Token',
-                    hintText: '123456789:AAExxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
-                    border: const OutlineInputBorder(),
-                    suffixIcon: IconButton(
-                      icon: Icon(_obscureToken
-                          ? Icons.visibility_off_rounded
-                          : Icons.visibility_rounded),
-                      onPressed: () => setState(() => _obscureToken = !_obscureToken),
+                  textInputAction: TextInputAction.next,
+                  trailing: NeuIconButton(
+                    icon: _obscureToken
+                        ? Icons.visibility_off_rounded
+                        : Icons.visibility_rounded,
+                    size: 36,
+                    iconSize: 18,
+                    tooltip: _obscureToken ? 'Show token' : 'Hide token',
+                    onTap: () => setState(() => _obscureToken = !_obscureToken),
+                  ),
+                  validator: (value) {
+                    final token = value?.trim() ?? '';
+                    if (token.isEmpty) return 'Enter the token from @BotFather';
+                    if (!token.contains(':')) return 'That does not look like a bot token';
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 10),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => launchUrl(
+                      Uri.parse(AppConstants.botFatherUrl),
+                      mode: LaunchMode.externalApplication,
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.open_in_new_rounded, size: 16, color: c.accent),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Open @BotFather',
+                            style: TextStyle(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w700,
+                              color: c.accent,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) return 'Bot Token is required';
-                    if (!value.contains(':')) return 'That doesn\'t look like a valid Bot Token';
-                    return null;
-                  },
                 ),
-                const SizedBox(height: 8),
-                TextButton.icon(
-                  onPressed: () => launchUrl(
-                    Uri.parse(AppConstants.botFatherUrl),
-                    mode: LaunchMode.externalApplication,
-                  ),
-                  icon: const Icon(Icons.open_in_new_rounded, size: 16),
-                  label: const Text("Get a token from @BotFather"),
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
+                const SizedBox(height: 14),
+                NeuTextField(
                   controller: _channelController,
-                  decoration: const InputDecoration(
-                    labelText: 'Channel ID',
-                    hintText: '@my_private_backup  or  -1001234567890',
-                    border: OutlineInputBorder(),
-                  ),
+                  label: 'Channel',
+                  hint: '@my_private_backup or -1001234567890',
+                  icon: Icons.campaign_rounded,
+                  textInputAction: TextInputAction.done,
                   validator: (value) {
-                    if (value == null || value.trim().isEmpty) return 'Channel ID is required';
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Enter your channel username or ID';
+                    }
                     return null;
                   },
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  'This is your primary channel — used for manual uploads from the '
-                  'Photos/Videos/Audio/Documents tabs. You can add more channels '
-                  'later in Settings for automatic folder syncing.',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
+                const SizedBox(height: 12),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: Text(
+                    'This is your main channel, used for uploads from the tabs. '
+                    'You can add more channels later in Settings for folder syncing.',
+                    style: TextStyle(fontSize: 13, height: 1.45, color: c.textMuted),
                   ),
                 ),
                 if (_errorMessage != null) ...[
-                  const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.errorContainer,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      _errorMessage!,
-                      style: TextStyle(color: theme.colorScheme.onErrorContainer),
+                  const SizedBox(height: 18),
+                  NeuSurface(
+                    depth: NeuDepth.inset,
+                    radius: 20,
+                    distance: 4,
+                    blur: 9,
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.error_outline_rounded, size: 20, color: c.danger),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            _errorMessage!,
+                            style: TextStyle(
+                              fontSize: 13.5,
+                              height: 1.45,
+                              fontWeight: FontWeight.w600,
+                              color: c.danger,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
-                const SizedBox(height: 28),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: _isSaving ? null : _submit,
-                    child: _isSaving
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text('Test Connection & Continue'),
-                  ),
+                const SizedBox(height: 30),
+                NeuButton(
+                  label: _isSaving ? 'Checking…' : 'Connect',
+                  icon: _isSaving ? null : Icons.link_rounded,
+                  loading: _isSaving,
+                  onPressed: _submit,
                 ),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _StepsCard extends StatelessWidget {
+  const _StepsCard();
+
+  static const _steps = [
+    'Create a bot with @BotFather and copy its token.',
+    'Create a private channel and add the bot as an admin who can post.',
+    'Paste the token and the channel below.',
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.neu;
+    return NeuSurface(
+      depth: NeuDepth.inset,
+      radius: 26,
+      distance: 5,
+      blur: 12,
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 8),
+      child: Column(
+        children: [
+          for (var i = 0; i < _steps.length; i++)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 14),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  NeuSurface(
+                    radius: 99,
+                    width: 28,
+                    height: 28,
+                    distance: 2.5,
+                    blur: 6,
+                    child: Center(
+                      child: Text(
+                        '${i + 1}',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          color: c.accent,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        _steps[i],
+                        style: TextStyle(
+                          fontSize: 14,
+                          height: 1.4,
+                          fontWeight: FontWeight.w600,
+                          color: c.text,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
       ),
     );
   }

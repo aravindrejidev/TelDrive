@@ -55,6 +55,9 @@ jobs:
             echo "No keystore secret set — building with debug signing."
           fi
 
+      # WARNING: anything passed with --dart-define is compiled into the APK and
+      # can be read back out of it. Only set the TELEGRAM_* secrets if this APK
+      # is for you alone and never shared or published.
       - name: Build release APK
         env:
           DEFAULT_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
