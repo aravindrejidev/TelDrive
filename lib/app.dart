@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'providers/file_provider.dart';
 import 'providers/settings_provider.dart';
+import 'providers/update_provider.dart';
 import 'providers/upload_provider.dart';
 import 'screens/home/home_screen.dart';
 import 'screens/onboarding/setup_screen.dart';
@@ -24,6 +25,7 @@ class TeleDriveApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => SettingsProvider()..load()),
         ChangeNotifierProvider(create: (_) => FileProvider()),
         ChangeNotifierProvider(create: (_) => UploadProvider()),
+        ChangeNotifierProvider(create: (_) => UpdateProvider()..init()),
       ],
       child: Consumer<SettingsProvider>(
         builder: (context, settings, _) => MaterialApp(

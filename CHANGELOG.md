@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.3.0
+
+### In-app updater
+- Checks GitHub for a newer release whenever the app opens and, if there is
+  one, slides up an update sheet showing the release notes.
+- Animated throughout: a blurred backdrop and spring-up card, a breathing
+  badge whose ring fills as the download advances, an icon that changes with
+  each stage, staggered release notes, and a shake when something fails.
+- Downloads inside the app with live progress, speed and time remaining.
+  It can be cancelled or hidden, and a finished download is reused.
+- Verifies the APK against the release's SHA-256 before installing, and asks
+  for the "install unknown apps" permission with an explanation.
+- "Later" and "Skip this version"; a dot on the Settings button while an
+  update is waiting; a check-for-updates section in Settings.
+
+### Releases
+- The build workflow no longer runs on every push. `release.yml` is started by
+  hand, takes the version number as an input, and publishes a GitHub Release
+  using `RELEASE_NOTES.md` from the repo root.
+- It refuses to build without the signing key, because an APK signed with a
+  throwaway key can never update an installed app.
+- The Telegram token is no longer compiled into release builds.
+
 ## 1.2.0
 
 ### Redesign

@@ -5,6 +5,7 @@ import '../../models/file_item.dart';
 import '../../models/sync_link.dart';
 import '../../providers/file_provider.dart';
 import '../../providers/settings_provider.dart';
+import '../../providers/update_provider.dart';
 import '../../services/permission_service.dart';
 import '../../services/sync_service.dart';
 import '../../theme/neu_theme.dart';
@@ -14,6 +15,7 @@ import '../../utils/helpers.dart';
 import '../../widgets/confirm_dialog.dart';
 import '../../widgets/neu/neu_controls.dart';
 import '../../widgets/neu/neu_surface.dart';
+import '../../widgets/update/update_sheet.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -180,17 +182,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ..._buildSyncLinks(context, settings),
                     const NeuSectionTitle('Storage'),
                     _buildStorage(context),
-                    const SizedBox(height: 28),
-                    Center(
-                      child: Text(
-                        '${AppConstants.appName} ${AppConstants.appVersion}',
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w600,
-                          color: context.neu.textMuted,
-                        ),
-                      ),
-                    ),
+                    const NeuSectionTitle('About and updates'),
+                    _buildUpdates(context),
                   ],
                 ),
               ),
@@ -459,6 +452,87 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   stat: files.statsFor(category),
                   fraction: total == 0 ? 0 : files.statsFor(category).bytes / total,
                 ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  String _updateStatus(UpdateProvider u) {
+    if (!u.isConfigured) return 'Update checks are only available in release builds.';
+    final version = u.info?.version;
+    switch (u.phase) {
+      case UpdatePhase.checking:
+        return 'Checking for updates…';
+      case UpdatePhase.upToDate:
+        return 'You are on the latest version.';
+      case UpdatePhase.available:
+        return 'Version $version is available.';
+      case UpdatePhase.downloading:
+        return 'Downloading version $version, ${(u.progress * 100).round()}%.';
+      case UpdatePhase.verifying:
+        return 'Verifying the download…';
+      case UpdatePhase.ready:
+        return 'Version $version is downloaded and ready to install.';
+      case UpdatePhase.needsPermission:
+        return 'Version $version is ready. Android needs your permission to install it.';
+      case UpdatePhase.installing:
+        return 'Opening the installer…';
+      case UpdatePhase.error:
+        return u.errorMessage ?? 'The update did not finish.';
+      case UpdatePhase.idle:
+        return u.checkError ?? 'Tap below to check for updates.';
+    }
+  }
+
+  Future<void> _onUpdateButton(UpdateProvider u) async {
+    if (u.hasPendingUpdate) {
+      showUpdateSheet(context);
+      return;
+    }
+    final found = await u.checkManually();
+    if (found && mounted) showUpdateSheet(context);
+  }
+
+  Widget _buildUpdates(BuildContext context) {
+    return Consumer<UpdateProvider>(
+      builder: (context, u, _) {
+        final hasUpdate = u.hasPendingUpdate;
+        final checking = u.phase == UpdatePhase.checking;
+        final version = u.currentVersion;
+
+        return _card(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              NeuListRow(
+                icon: Icons.system_update_rounded,
+                title: version == null
+                    ? AppConstants.appName
+                    : '${AppConstants.appName} $version',
+                subtitle: _updateStatus(u),
+              ),
+              AnimatedSize(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOutCubic,
+                alignment: Alignment.topCenter,
+                child: u.phase == UpdatePhase.downloading
+                    ? Padding(
+                        padding: const EdgeInsets.fromLTRB(2, 6, 2, 6),
+                        child: NeuProgressBar(value: u.progress, height: 12),
+                      )
+                    : const SizedBox(width: double.infinity),
+              ),
+              const SizedBox(height: 10),
+              NeuButton(
+                label: hasUpdate ? 'View update' : 'Check for updates',
+                icon: hasUpdate ? Icons.rocket_launch_rounded : Icons.refresh_rounded,
+                height: 50,
+                style: hasUpdate ? NeuButtonStyle.primary : NeuButtonStyle.secondary,
+                loading: checking,
+                onPressed: u.isConfigured ? () => _onUpdateButton(u) : null,
+              ),
             ],
           ),
         );

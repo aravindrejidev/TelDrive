@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/file_item.dart';
 import '../../providers/file_provider.dart';
+import '../../providers/update_provider.dart';
 import '../../providers/upload_provider.dart';
 import '../../theme/neu_theme.dart';
 import '../../utils/constants.dart';
@@ -11,6 +12,7 @@ import '../../widgets/empty_state.dart';
 import '../../widgets/file_card.dart';
 import '../../widgets/neu/neu_controls.dart';
 import '../../widgets/neu/neu_surface.dart';
+import '../../widgets/update/update_sheet.dart';
 import '../../widgets/upload_progress_list.dart';
 import '../file_preview/file_preview_screen.dart';
 import '../settings/settings_screen.dart';
@@ -46,8 +48,19 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     super.initState();
     _tabController = TabController(length: _categories.length, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) context.read<FileProvider>().loadAll();
+      if (!mounted) return;
+      context.read<FileProvider>().loadAll();
+      _checkForUpdate();
     });
+  }
+
+  /// Looks for a newer release as soon as the app opens. If there is one the
+  /// update sheet slides up once the home screen has settled.
+  Future<void> _checkForUpdate() async {
+    final shouldPrompt = await context.read<UpdateProvider>().checkOnStartup();
+    if (!shouldPrompt || !mounted) return;
+    await Future<void>.delayed(const Duration(milliseconds: 700));
+    if (mounted) showUpdateSheet(context);
   }
 
   @override
@@ -223,11 +236,39 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             onTap: _showSortSheet,
           ),
           const SizedBox(width: 12),
-          NeuIconButton(
-            icon: Icons.settings_rounded,
-            tooltip: 'Settings',
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
+          Consumer<UpdateProvider>(
+            builder: (context, updates, _) => Stack(
+              clipBehavior: Clip.none,
+              children: [
+                NeuIconButton(
+                  icon: Icons.settings_rounded,
+                  tooltip: 'Settings',
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
+                  ),
+                ),
+                // A small dot appears while an update is waiting.
+                Positioned(
+                  right: 0,
+                  top: 0,
+                  child: IgnorePointer(
+                    child: AnimatedScale(
+                      scale: updates.hasPendingUpdate ? 1 : 0,
+                      duration: const Duration(milliseconds: 350),
+                      curve: Curves.easeOutBack,
+                      child: Container(
+                        width: 15,
+                        height: 15,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: c.accentGradient,
+                          border: Border.all(color: c.base, width: 2.5),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],

@@ -66,6 +66,13 @@ class StorageService {
         value: keep.toString(),
       );
 
+  /// The release the person chose "Skip this version" for, if any.
+  Future<String?> getSkippedUpdateVersion() =>
+      _storage.read(key: AppConstants.keySkippedUpdateVersion);
+
+  Future<void> setSkippedUpdateVersion(String version) =>
+      _storage.write(key: AppConstants.keySkippedUpdateVersion, value: version);
+
   Future<int> getSyncFrequencyMinutes() async {
     final value = await _storage.read(key: AppConstants.keySyncFrequencyMinutes);
     return int.tryParse(value ?? '') ?? AppConstants.defaultSyncFrequencyMinutes;

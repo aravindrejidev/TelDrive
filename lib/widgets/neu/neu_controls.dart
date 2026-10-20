@@ -189,7 +189,7 @@ class NeuButton extends StatelessWidget {
             return AnimatedContainer(
               duration: const Duration(milliseconds: 120),
               height: height,
-              padding: const EdgeInsets.symmetric(horizontal: 26),
+              padding: EdgeInsets.symmetric(horizontal: expand ? 16 : 26),
               decoration: BoxDecoration(
                 gradient: c.accentGradient,
                 borderRadius: BorderRadius.circular(height),
@@ -227,7 +227,7 @@ class NeuButton extends StatelessWidget {
             depth: pressed ? NeuDepth.inset : NeuDepth.raised,
             radius: height,
             height: height,
-            padding: const EdgeInsets.symmetric(horizontal: 26),
+            padding: EdgeInsets.symmetric(horizontal: expand ? 16 : 26),
             distance: 5,
             blur: 13,
             child: Center(child: content),

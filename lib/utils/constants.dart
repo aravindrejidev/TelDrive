@@ -3,7 +3,6 @@ class AppConstants {
   AppConstants._();
 
   static const String appName = 'TeleDrive';
-  static const String appVersion = '1.2.0';
 
   // --- Secure storage keys (Bot Token is the only true secret) ---------------
   static const String keyBotToken = 'tg_bot_token';
@@ -13,6 +12,7 @@ class AppConstants {
   // --- Small preferences (not secrets, stored alongside them for simplicity) -
   static const String keyThemeMode = 'theme_mode';
   static const String keyKeepPhotoOriginal = 'keep_photo_original';
+  static const String keySkippedUpdateVersion = 'skipped_update_version';
 
   // --- WorkManager task identifiers ------------------------------------------
   static const String periodicSyncTaskName = 'com.tgstorage.app.periodicSync';
