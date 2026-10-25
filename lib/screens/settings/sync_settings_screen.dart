@@ -403,3 +403,148 @@ class _AddSyncLinkDialog extends StatefulWidget {
   @override
   State<_AddSyncLinkDialog> createState() => _AddSyncLinkDialogState();
 }
+
+class _AddSyncLinkDialogState extends State<_AddSyncLinkDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
+  final _channelController = TextEditingController();
+  String? _folderPath;
+  bool _isSaving = false;
+  String? _errorMessage;
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _channelController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickFolder() async {
+    final hasAccess = await PermissionService.instance.hasAllFilesAccess();
+    if (!hasAccess) {
+      final granted = await PermissionService.instance.requestAllFilesAccess();
+      if (!granted) {
+        if (mounted) {
+          setState(() => _errorMessage =
+              'Allow access to all files so ${AppConstants.appName} can read the folder.');
+        }
+        return;
+      }
+    }
+    final path = await FilePicker.getDirectoryPath();
+    if (path != null && mounted) {
+      setState(() {
+        _folderPath = path;
+        _errorMessage = null;
+      });
+    }
+  }
+
+  Future<void> _save() async {
+    FocusScope.of(context).unfocus();
+    if (!_formKey.currentState!.validate()) return;
+    if (_folderPath == null) {
+      setState(() => _errorMessage = 'Choose the folder to sync.');
+      return;
+    }
+    setState(() {
+      _isSaving = true;
+      _errorMessage = null;
+    });
+    try {
+      await widget.settings.addSyncLink(
+        name: _nameController.text,
+        targetChannelId: _channelController.text,
+        folderPath: _folderPath!,
+      );
+      if (mounted) Navigator.of(context).pop();
+    } catch (e) {
+      if (mounted) setState(() => _errorMessage = friendlyError(e));
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.neu;
+    return NeuDialogCard(
+      title: 'Add sync link',
+      icon: Icons.sync_alt_rounded,
+      actions: [
+        NeuButton(
+          label: 'Cancel',
+          height: 50,
+          style: NeuButtonStyle.secondary,
+          onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
+        ),
+        NeuButton(
+          label: _isSaving ? 'Checking…' : 'Save',
+          height: 50,
+          loading: _isSaving,
+          onPressed: _save,
+        ),
+      ],
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            NeuTextField(
+              controller: _nameController,
+              label: 'Name',
+              hint: 'Lossless music',
+              textInputAction: TextInputAction.next,
+              validator: (v) => (v == null || v.trim().isEmpty) ? 'Give this link a name' : null,
+            ),
+            const SizedBox(height: 16),
+            NeuTextField(
+              controller: _channelController,
+              label: 'Channel',
+              hint: '@my_music_channel or -100…',
+              textInputAction: TextInputAction.done,
+              validator: (v) =>
+                  (v == null || v.trim().isEmpty) ? 'Enter a channel username or ID' : null,
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(6, 8, 6, 0),
+              child: Text(
+                'Add the bot to this channel as an admin that can post.',
+                style: TextStyle(fontSize: 12.5, height: 1.4, color: c.textMuted),
+              ),
+            ),
+            const SizedBox(height: 16),
+            NeuButton(
+              label: _folderPath == null ? 'Choose folder' : 'Change folder',
+              icon: Icons.folder_open_rounded,
+              height: 48,
+              style: NeuButtonStyle.secondary,
+              onPressed: _pickFolder,
+            ),
+            if (_folderPath != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(6, 10, 6, 0),
+                child: Text(
+                  _folderPath!,
+                  style: TextStyle(fontSize: 12.5, height: 1.4, color: c.textMuted),
+                ),
+              ),
+            if (_errorMessage != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(6, 14, 6, 0),
+                child: Text(
+                  _errorMessage!,
+                  style: TextStyle(
+                    fontSize: 13,
+                    height: 1.4,
+                    fontWeight: FontWeight.w600,
+                    color: c.danger,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}

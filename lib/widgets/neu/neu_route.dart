@@ -8,7 +8,7 @@ Route<T> neuRoute<T>(Widget page) {
     transitionDuration: const Duration(milliseconds: 360),
     reverseTransitionDuration: const Duration(milliseconds: 280),
     pageBuilder: (context, animation, secondaryAnimation) => page,
-    transitionBuilder: (context, animation, secondaryAnimation, child) {
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
       final enter = animation.drive(CurveTween(curve: Curves.easeOutCubic));
       return SlideTransition(
         position: secondaryAnimation.drive(

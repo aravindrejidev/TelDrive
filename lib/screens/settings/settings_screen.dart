@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../providers/file_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../providers/update_provider.dart';
+import '../../theme/neu_theme.dart';
 import '../../utils/constants.dart';
 import '../../utils/formatters.dart';
 import '../../widgets/neu/neu_route.dart';
