@@ -2,7 +2,7 @@
 
 <br/>
 
-<img src="images/logo.png" alt="TeleDrive app icon" width="200" />
+<img src="android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" alt="TeleDrive app icon" width="200" />
 
 # TeleDrive
 
