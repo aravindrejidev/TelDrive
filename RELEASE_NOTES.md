@@ -4,7 +4,7 @@
 - **Settings, reorganised.** Settings is now a list of sections, each with its own page: Appearance, Library, Uploads, Sync, Storage and data, Telegram connection and Updates.
 - **More to choose from.** Five accent colours, haptic feedback on or off, a default sort order and start tab, silent uploads, and syncing only on Wi-Fi, only while charging or only when the battery is not low.
 - **An About page** with the version and build, the developer, and links to the source code and release history.
-- **A new look.** A soft, premium redesign with light and dark themes.
+- **A new look.** A soft, premium redesign with light and dark themes, and a brand new app icon and start-up screen.
 - **Search and sort** your files, with an upload queue and a Retry button for failed uploads.
 
 ## Fixes

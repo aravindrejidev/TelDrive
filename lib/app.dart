@@ -70,11 +70,15 @@ class _AppGate extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer<SettingsProvider>(
       builder: (context, settings, _) {
-        return switch (settings.loadState) {
-          SettingsLoadState.loading => const SplashScreen(),
-          SettingsLoadState.needsSetup => const SetupScreen(),
-          SettingsLoadState.ready => const HomeScreen(),
-        };
+        // A short crossfade, so the splash melts into the app instead of cutting.
+        return AnimatedSwitcher(
+          duration: const Duration(milliseconds: 450),
+          child: switch (settings.loadState) {
+            SettingsLoadState.loading => const SplashScreen(key: ValueKey('splash')),
+            SettingsLoadState.needsSetup => const SetupScreen(key: ValueKey('setup')),
+            SettingsLoadState.ready => const HomeScreen(key: ValueKey('home')),
+          },
+        );
       },
     );
   }

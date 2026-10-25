@@ -9,6 +9,7 @@ import '../../theme/neu_theme.dart';
 import '../../utils/constants.dart';
 import '../../utils/formatters.dart';
 import '../../utils/helpers.dart';
+import '../../widgets/brand_logo.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/file_card.dart';
 import '../../widgets/neu/neu_controls.dart';
@@ -195,14 +196,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       padding: const EdgeInsets.fromLTRB(20, 14, 20, 12),
       child: Row(
         children: [
-          const NeuSurface(
-            radius: 99,
-            width: 52,
-            height: 52,
-            distance: 5,
-            blur: 12,
-            child: Center(child: GradientIcon(Icons.cloud_rounded, size: 28)),
-          ),
+          const BrandLogo(size: 52),
           const SizedBox(width: 14),
           Expanded(
             child: Column(

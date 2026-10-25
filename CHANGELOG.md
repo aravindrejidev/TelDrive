@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### New logo
+- A new app icon: a glossy neon cloud, folder and paper plane. It is used as the
+  launcher icon (including the adaptive icon on Android 8 and newer), on the
+  Android start-up screen, and in the app's home header, welcome screen and
+  About page.
+- The start-up screen is now deep navy with the logo and a short tagline, and
+  fades into the app instead of cutting.
+
 ### Settings, reorganised
 - Settings is now a home screen of sections. Each opens its own page with a
   slide-and-fade transition and rows that ease in: **Appearance**, **Library**,

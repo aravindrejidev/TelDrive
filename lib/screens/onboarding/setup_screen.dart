@@ -5,6 +5,7 @@ import '../../providers/settings_provider.dart';
 import '../../theme/neu_theme.dart';
 import '../../utils/constants.dart';
 import '../../utils/helpers.dart';
+import '../../widgets/brand_logo.dart';
 import '../../widgets/neu/neu_controls.dart';
 import '../../widgets/neu/neu_surface.dart';
 
@@ -73,14 +74,7 @@ class _SetupScreenState extends State<SetupScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const NeuSurface(
-                  radius: 99,
-                  width: 92,
-                  height: 92,
-                  distance: 9,
-                  blur: 20,
-                  child: Center(child: GradientIcon(Icons.cloud_rounded, size: 44)),
-                ),
+                const BrandLogo(size: 92, glow: true),
                 const SizedBox(height: 28),
                 Text('Connect your\nTelegram bot', style: textTheme.headlineMedium),
                 const SizedBox(height: 12),

@@ -5,6 +5,7 @@ import '../../providers/update_provider.dart';
 import '../../theme/neu_theme.dart';
 import '../../utils/app_info.dart';
 import '../../utils/constants.dart';
+import '../../widgets/brand_logo.dart';
 import '../../widgets/neu/neu_controls.dart';
 import '../../widgets/neu/neu_route.dart';
 import '../../widgets/neu/neu_surface.dart';
@@ -179,32 +180,7 @@ class _HeroCard extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(24, 30, 24, 28),
         child: Column(
           children: [
-            Container(
-              width: 104,
-              height: 104,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: c.accentGradient,
-                boxShadow: [
-                  BoxShadow(
-                    color: c.accent.withValues(alpha: 0.38),
-                    blurRadius: 28,
-                    offset: const Offset(0, 12),
-                  ),
-                  BoxShadow(
-                    color: c.shadowDark,
-                    blurRadius: 18,
-                    offset: const Offset(7, 7),
-                  ),
-                  BoxShadow(
-                    color: c.shadowLight,
-                    blurRadius: 18,
-                    offset: const Offset(-6, -6),
-                  ),
-                ],
-              ),
-              child: Icon(Icons.cloud_rounded, size: 52, color: c.onAccent),
-            ),
+            const BrandLogo(size: 112, glow: true),
             const SizedBox(height: 22),
             Text(
               AppConstants.appName,
