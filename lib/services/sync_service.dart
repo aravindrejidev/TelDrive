@@ -81,7 +81,12 @@ class SyncService {
     await Workmanager().initialize(callbackDispatcher);
   }
 
-  Future<void> ensureAutoSyncScheduled({required int frequencyMinutes}) async {
+  Future<void> ensureAutoSyncScheduled({
+    required int frequencyMinutes,
+    bool wifiOnly = false,
+    bool requiresCharging = false,
+    bool batteryNotLow = false,
+  }) async {
     final minutes = frequencyMinutes < AppConstants.minSyncFrequencyMinutes
         ? AppConstants.minSyncFrequencyMinutes
         : frequencyMinutes;
@@ -90,7 +95,11 @@ class SyncService {
       AppConstants.periodicSyncUniqueName,
       AppConstants.periodicSyncTaskName,
       frequency: Duration(minutes: minutes),
-      constraints: Constraints(networkType: NetworkType.connected),
+      constraints: Constraints(
+        networkType: wifiOnly ? NetworkType.unmetered : NetworkType.connected,
+        requiresCharging: requiresCharging,
+        requiresBatteryNotLow: batteryNotLow,
+      ),
       foregroundServiceConfig: ForegroundServiceConfig(
         notificationTitle: 'TeleDrive Auto-Sync',
         notificationText: 'Checking your sync folders for new files…',
@@ -123,6 +132,8 @@ class SyncService {
     final botToken = await StorageService.instance.getBotToken();
     if (botToken == null || botToken.isEmpty) return const SyncResult();
     final keepPhotoOriginal = await StorageService.instance.getKeepPhotoOriginal();
+    final silent = await StorageService.instance
+        .getBool(AppConstants.keySilentUploads, fallback: true);
     final deadline = budget == null ? null : DateTime.now().add(budget);
 
     _isRunning = true;
@@ -138,6 +149,7 @@ class SyncService {
               link,
               botToken: botToken,
               keepPhotoOriginal: keepPhotoOriginal,
+              silent: silent,
               deadline: deadline,
             );
       }
@@ -156,6 +168,7 @@ class SyncService {
     SyncLink link, {
     required String botToken,
     required bool keepPhotoOriginal,
+    required bool silent,
     DateTime? deadline,
   }) async {
     final folder = Directory(link.folderPath);
@@ -223,6 +236,7 @@ class SyncService {
           fileName: fileName,
           category: category,
           keepPhotoOriginal: keepPhotoOriginal,
+          silent: silent,
         );
         await db.insertFile(
           FileItem(

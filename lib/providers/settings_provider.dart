@@ -4,8 +4,11 @@ import '../services/database_service.dart';
 import '../services/storage_service.dart';
 import '../services/sync_service.dart';
 import '../services/telegram_service.dart';
+import '../theme/neu_theme.dart';
 import '../utils/constants.dart';
+import '../utils/haptics.dart';
 import '../utils/helpers.dart';
+import 'file_provider.dart';
 
 enum SettingsLoadState { loading, needsSetup, ready }
 
@@ -27,8 +30,29 @@ class SettingsProvider extends ChangeNotifier {
   String? channelId;
   int syncFrequencyMinutes = AppConstants.defaultSyncFrequencyMinutes;
   List<SyncLink> syncLinks = [];
+  // --- Appearance
   ThemeMode themeMode = ThemeMode.system;
+  AccentPalette accentPalette = AccentPalette.indigo;
+  bool hapticsEnabled = true;
+
+  // --- Library
+  FileSort defaultSort = FileSort.newest;
+  int startTabIndex = 0;
+  bool showThumbnails = true;
+  bool confirmPermanentDelete = true;
+
+  // --- Uploads
   bool keepPhotoOriginal = true;
+  bool silentUploads = true;
+  int maxConcurrentUploads = 2;
+
+  // --- Sync conditions (applied through WorkManager)
+  bool syncWifiOnly = false;
+  bool syncOnlyCharging = false;
+  bool syncBatteryNotLow = false;
+
+  // --- Updates
+  bool autoCheckUpdates = true;
 
   bool get isConfigured =>
       botToken != null && botToken!.isNotEmpty && channelId != null && channelId!.isNotEmpty;
@@ -42,6 +66,40 @@ class SettingsProvider extends ChangeNotifier {
     syncLinks = await _db.getAllSyncLinks();
     themeMode = _themeModeFromName(await _storage.getThemeModeName());
     keepPhotoOriginal = await _storage.getKeepPhotoOriginal();
+
+    accentPalette = _enumByName(
+      AccentPalette.values,
+      await _storage.getString(AppConstants.keyAccentPalette),
+      AccentPalette.indigo,
+    );
+    hapticsEnabled = await _storage.getBool(AppConstants.keyHaptics, fallback: true);
+    Haptics.enabled = hapticsEnabled;
+
+    defaultSort = _enumByName(
+      FileSort.values,
+      await _storage.getString(AppConstants.keyDefaultSort),
+      FileSort.newest,
+    );
+    startTabIndex =
+        (await _storage.getInt(AppConstants.keyStartTab, fallback: 0)).clamp(0, 3);
+    showThumbnails =
+        await _storage.getBool(AppConstants.keyShowThumbnails, fallback: true);
+    confirmPermanentDelete =
+        await _storage.getBool(AppConstants.keyConfirmPermanentDelete, fallback: true);
+
+    silentUploads = await _storage.getBool(AppConstants.keySilentUploads, fallback: true);
+    maxConcurrentUploads =
+        (await _storage.getInt(AppConstants.keyMaxConcurrentUploads, fallback: 2))
+            .clamp(1, 4);
+
+    syncWifiOnly = await _storage.getBool(AppConstants.keySyncWifiOnly, fallback: false);
+    syncOnlyCharging =
+        await _storage.getBool(AppConstants.keySyncOnlyCharging, fallback: false);
+    syncBatteryNotLow =
+        await _storage.getBool(AppConstants.keySyncBatteryNotLow, fallback: false);
+
+    autoCheckUpdates =
+        await _storage.getBool(AppConstants.keyAutoCheckUpdates, fallback: true);
     loadState = isConfigured ? SettingsLoadState.ready : SettingsLoadState.needsSetup;
     notifyListeners();
   }
@@ -56,6 +114,99 @@ class SettingsProvider extends ChangeNotifier {
     themeMode = mode;
     notifyListeners();
     await _storage.setThemeModeName(mode.name);
+  }
+
+  T _enumByName<T extends Enum>(List<T> values, String? name, T fallback) {
+    for (final value in values) {
+      if (value.name == name) return value;
+    }
+    return fallback;
+  }
+
+  // --- Appearance ---------------------------------------------------------
+
+  Future<void> setAccentPalette(AccentPalette palette) async {
+    accentPalette = palette;
+    notifyListeners();
+    await _storage.setString(AppConstants.keyAccentPalette, palette.name);
+  }
+
+  Future<void> setHapticsEnabled(bool enabled) async {
+    hapticsEnabled = enabled;
+    Haptics.enabled = enabled;
+    notifyListeners();
+    await _storage.setBool(AppConstants.keyHaptics, enabled);
+  }
+
+  // --- Library ------------------------------------------------------------
+
+  Future<void> setDefaultSort(FileSort sort) async {
+    defaultSort = sort;
+    notifyListeners();
+    await _storage.setString(AppConstants.keyDefaultSort, sort.name);
+  }
+
+  Future<void> setStartTabIndex(int index) async {
+    startTabIndex = index.clamp(0, 3);
+    notifyListeners();
+    await _storage.setInt(AppConstants.keyStartTab, startTabIndex);
+  }
+
+  Future<void> setShowThumbnails(bool show) async {
+    showThumbnails = show;
+    notifyListeners();
+    await _storage.setBool(AppConstants.keyShowThumbnails, show);
+  }
+
+  Future<void> setConfirmPermanentDelete(bool confirm) async {
+    confirmPermanentDelete = confirm;
+    notifyListeners();
+    await _storage.setBool(AppConstants.keyConfirmPermanentDelete, confirm);
+  }
+
+  // --- Uploads ------------------------------------------------------------
+
+  Future<void> setSilentUploads(bool silent) async {
+    silentUploads = silent;
+    notifyListeners();
+    await _storage.setBool(AppConstants.keySilentUploads, silent);
+  }
+
+  Future<void> setMaxConcurrentUploads(int count) async {
+    maxConcurrentUploads = count.clamp(1, 4);
+    notifyListeners();
+    await _storage.setInt(AppConstants.keyMaxConcurrentUploads, maxConcurrentUploads);
+  }
+
+  // --- Sync conditions ----------------------------------------------------
+
+  Future<void> setSyncWifiOnly(bool value) async {
+    syncWifiOnly = value;
+    notifyListeners();
+    await _storage.setBool(AppConstants.keySyncWifiOnly, value);
+    await _reconcileAutoSyncSchedule();
+  }
+
+  Future<void> setSyncOnlyCharging(bool value) async {
+    syncOnlyCharging = value;
+    notifyListeners();
+    await _storage.setBool(AppConstants.keySyncOnlyCharging, value);
+    await _reconcileAutoSyncSchedule();
+  }
+
+  Future<void> setSyncBatteryNotLow(bool value) async {
+    syncBatteryNotLow = value;
+    notifyListeners();
+    await _storage.setBool(AppConstants.keySyncBatteryNotLow, value);
+    await _reconcileAutoSyncSchedule();
+  }
+
+  // --- Updates ------------------------------------------------------------
+
+  Future<void> setAutoCheckUpdates(bool value) async {
+    autoCheckUpdates = value;
+    notifyListeners();
+    await _storage.setBool(AppConstants.keyAutoCheckUpdates, value);
   }
 
   Future<void> setKeepPhotoOriginal(bool keep) async {
@@ -166,8 +317,12 @@ class SettingsProvider extends ChangeNotifier {
 
   Future<void> _reconcileAutoSyncSchedule() async {
     if (hasAnyAutoSyncEnabled) {
-      await SyncService.instance
-          .ensureAutoSyncScheduled(frequencyMinutes: syncFrequencyMinutes);
+      await SyncService.instance.ensureAutoSyncScheduled(
+        frequencyMinutes: syncFrequencyMinutes,
+        wifiOnly: syncWifiOnly,
+        requiresCharging: syncOnlyCharging,
+        batteryNotLow: syncBatteryNotLow,
+      );
     } else {
       await SyncService.instance.cancelAutoSync();
     }

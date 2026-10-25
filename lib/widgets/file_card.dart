@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../models/file_item.dart';
+import '../providers/settings_provider.dart';
 import '../theme/neu_theme.dart';
 import '../utils/file_type_helper.dart';
 import '../utils/formatters.dart';
@@ -19,7 +21,8 @@ class FileCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.neu;
     final hasLocal = _hasLocalCopy;
-    final isImage = item.category == FileCategory.photo && hasLocal;
+    final showThumbnails = context.select<SettingsProvider, bool>((s) => s.showThumbnails);
+    final isImage = item.category == FileCategory.photo && hasLocal && showThumbnails;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 9),

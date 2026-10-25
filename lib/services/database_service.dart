@@ -201,6 +201,34 @@ class DatabaseService {
     return paths;
   }
 
+  /// How many removed files are being remembered (see [markRemoved]).
+  Future<int> removedCount() async {
+    final db = await database;
+    final rows = await db.rawQuery(
+      'SELECT COUNT(*) AS c FROM $filesTable WHERE is_removed = 1',
+    );
+    return (rows.first['c'] as num?)?.toInt() ?? 0;
+  }
+
+  /// Forgets removed files for good. Any of them that still sit in a sync
+  /// folder will be uploaded again by the next sync.
+  Future<int> purgeRemoved() async {
+    final db = await database;
+    return db.delete(filesTable, where: 'is_removed = 1');
+  }
+
+  /// Clears the "on this device" pointer of every file whose local copy lives
+  /// under [directoryPath] (used when the downloaded copies are deleted).
+  Future<void> clearLocalPathsUnder(String directoryPath) async {
+    final db = await database;
+    await db.update(
+      filesTable,
+      {'local_path': null},
+      where: 'local_path IS NOT NULL AND substr(local_path, 1, ?) = ?',
+      whereArgs: [directoryPath.length, directoryPath],
+    );
+  }
+
   // --- sync links ---------------------------------------------------------
 
   Future<int> insertSyncLink(SyncLink link) async {

@@ -45,6 +45,28 @@ class StorageService {
         value: minutes.toString(),
       );
 
+  // Generic typed preferences, so each new setting is one line of its own.
+  Future<bool> getBool(String key, {required bool fallback}) async {
+    final value = await _storage.read(key: key);
+    return value == null ? fallback : value == 'true';
+  }
+
+  Future<void> setBool(String key, bool value) =>
+      _storage.write(key: key, value: value.toString());
+
+  Future<int> getInt(String key, {required int fallback}) async {
+    final value = await _storage.read(key: key);
+    return int.tryParse(value ?? '') ?? fallback;
+  }
+
+  Future<void> setInt(String key, int value) =>
+      _storage.write(key: key, value: value.toString());
+
+  Future<String?> getString(String key) => _storage.read(key: key);
+
+  Future<void> setString(String key, String value) =>
+      _storage.write(key: key, value: value);
+
   /// `system`, `light` or `dark`.
   Future<String> getThemeModeName() async {
     final value = await _storage.read(key: AppConstants.keyThemeMode);
@@ -69,6 +91,9 @@ class StorageService {
   /// The release the person chose "Skip this version" for, if any.
   Future<String?> getSkippedUpdateVersion() =>
       _storage.read(key: AppConstants.keySkippedUpdateVersion);
+
+  Future<void> clearSkippedUpdateVersion() =>
+      _storage.delete(key: AppConstants.keySkippedUpdateVersion);
 
   Future<void> setSkippedUpdateVersion(String version) =>
       _storage.write(key: AppConstants.keySkippedUpdateVersion, value: version);

@@ -1,8 +1,19 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:telegram_cloud_storage/models/update_info.dart';
+import 'package:telegram_cloud_storage/utils/app_info.dart';
 import 'package:telegram_cloud_storage/widgets/update/release_notes_view.dart';
 
 void main() {
+  group('AppInfo', () {
+    test('reports nothing when the build has no repository', () {
+      // A plain test run has no --dart-define values, like a local debug build.
+      expect(AppInfo.hasRepository, isFalse);
+      expect(AppInfo.owner, isNull);
+      expect(AppInfo.repositoryUri, isNull);
+      expect(AppInfo.shortCommit, isEmpty);
+    });
+  });
+
   group('AppVersion', () {
     test('reads versions out of release tags', () {
       expect(AppVersion.tryParse('v1.3.0').toString(), '1.3.0');

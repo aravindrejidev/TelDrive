@@ -50,6 +50,25 @@ bot added as admin).
 | Max re-download size (`getFile`) | 20 MB |
 | Photo upload as a compressed photo | 10 MB (TeleDrive sends photos as files by default, so this does not apply) |
 
+## Settings
+
+Settings opens on a list of sections; each one has its own page.
+
+| Section | What you can change |
+|---|---|
+| Appearance | Theme (system, light, dark), accent colour, haptic feedback |
+| Library | Default sort order, which tab opens first, photo thumbnails, confirm before permanent delete |
+| Uploads | Original photo quality, silent uploads, how many uploads run at once |
+| Sync | Sync links, check interval, only on Wi-Fi, only while charging, only when the battery is not low |
+| Storage and data | Size per category, clear downloaded copies, forget removed files |
+| Telegram connection | Test the connection, change token or channel, disconnect |
+| Updates | Check now, check when the app opens, clear downloaded updates |
+| About | Version and build, developer, source and issue links, licences |
+
+The developer, links and commit shown in About come from the release build
+(the workflow passes the repository and commit automatically), so they appear in
+release APKs and are hidden in local debug builds.
+
 ## Publishing a release
 
 Releases are built by hand, never automatically.

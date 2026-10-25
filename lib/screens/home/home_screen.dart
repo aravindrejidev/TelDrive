@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/file_item.dart';
 import '../../providers/file_provider.dart';
+import '../../providers/settings_provider.dart';
 import '../../providers/update_provider.dart';
 import '../../providers/upload_provider.dart';
 import '../../theme/neu_theme.dart';
@@ -11,6 +12,7 @@ import '../../utils/helpers.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/file_card.dart';
 import '../../widgets/neu/neu_controls.dart';
+import '../../widgets/neu/neu_route.dart';
 import '../../widgets/neu/neu_surface.dart';
 import '../../widgets/update/update_sheet.dart';
 import '../../widgets/upload_progress_list.dart';
@@ -46,11 +48,19 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: _categories.length, vsync: this);
+    final settings = context.read<SettingsProvider>();
+    _tabController = TabController(
+      length: _categories.length,
+      vsync: this,
+      initialIndex: settings.startTabIndex.clamp(0, _categories.length - 1),
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      // Apply the saved preferences, then load the files.
+      context.read<FileProvider>().setSort(settings.defaultSort);
+      context.read<UploadProvider>().maxConcurrent = settings.maxConcurrentUploads;
       context.read<FileProvider>().loadAll();
-      _checkForUpdate();
+      if (settings.autoCheckUpdates) _checkForUpdate();
     });
   }
 
@@ -244,7 +254,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   icon: Icons.settings_rounded,
                   tooltip: 'Settings',
                   onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
+                    neuRoute<void>(const SettingsScreen()),
                   ),
                 ),
                 // A small dot appears while an update is waiting.

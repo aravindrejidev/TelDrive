@@ -72,6 +72,23 @@ class NeuColors extends ThemeExtension<NeuColors> {
     danger: Color(0xFFFF7A90),
   );
 
+  /// The same palette with a different accent gradient.
+  NeuColors withAccent(Color newAccent, Color newAccentDeep) => NeuColors(
+        isDark: isDark,
+        base: base,
+        baseHigh: baseHigh,
+        baseLow: baseLow,
+        shadowLight: shadowLight,
+        shadowDark: shadowDark,
+        text: text,
+        textMuted: textMuted,
+        accent: newAccent,
+        accentDeep: newAccentDeep,
+        onAccent: onAccent,
+        success: success,
+        danger: danger,
+      );
+
   /// Raised surfaces: lit from the top-left, so lighter there.
   LinearGradient get surfaceGradient => LinearGradient(
         begin: Alignment.topLeft,
@@ -131,12 +148,50 @@ class NeuColors extends ThemeExtension<NeuColors> {
   }
 }
 
+/// The accent gradient people can pick in Settings. Each one has a stronger
+/// version for the light theme and a lighter one for the dark theme, so text
+/// on it stays readable in both.
+enum AccentPalette { indigo, ocean, emerald, sunset, violet }
+
+extension AccentPaletteX on AccentPalette {
+  String get label => switch (this) {
+        AccentPalette.indigo => 'Indigo',
+        AccentPalette.ocean => 'Ocean',
+        AccentPalette.emerald => 'Emerald',
+        AccentPalette.sunset => 'Sunset',
+        AccentPalette.violet => 'Violet',
+      };
+
+  Color accent({required bool dark}) => switch (this) {
+        AccentPalette.indigo => dark ? const Color(0xFF8CA0FF) : const Color(0xFF4F6EF7),
+        AccentPalette.ocean => dark ? const Color(0xFF5CB8FF) : const Color(0xFF0F7FD4),
+        AccentPalette.emerald => dark ? const Color(0xFF4FD1A0) : const Color(0xFF138F62),
+        AccentPalette.sunset => dark ? const Color(0xFFFF8FA3) : const Color(0xFFDB4468),
+        AccentPalette.violet => dark ? const Color(0xFFB39DFF) : const Color(0xFF7B5CF0),
+      };
+
+  Color deep({required bool dark}) => switch (this) {
+        AccentPalette.indigo => dark ? const Color(0xFF9B7DFF) : const Color(0xFF6A4CF0),
+        AccentPalette.ocean => dark ? const Color(0xFF4FD6C4) : const Color(0xFF11A29C),
+        AccentPalette.emerald => dark ? const Color(0xFF3CC5C5) : const Color(0xFF0E7C86),
+        AccentPalette.sunset => dark ? const Color(0xFFFFB26B) : const Color(0xFFDE6238),
+        AccentPalette.violet => dark ? const Color(0xFFD29BFF) : const Color(0xFFA24FEF),
+      };
+}
+
 extension NeuContext on BuildContext {
   NeuColors get neu => Theme.of(this).extension<NeuColors>()!;
 }
 
-ThemeData buildNeuTheme(Brightness brightness) {
-  final c = brightness == Brightness.dark ? NeuColors.dark : NeuColors.light;
+ThemeData buildNeuTheme(
+  Brightness brightness, {
+  AccentPalette palette = AccentPalette.indigo,
+}) {
+  final isDark = brightness == Brightness.dark;
+  final c = (isDark ? NeuColors.dark : NeuColors.light).withAccent(
+    palette.accent(dark: isDark),
+    palette.deep(dark: isDark),
+  );
 
   final scheme = ColorScheme.fromSeed(
     seedColor: c.accent,

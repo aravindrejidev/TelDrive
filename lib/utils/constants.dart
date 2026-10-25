@@ -13,6 +13,22 @@ class AppConstants {
   static const String keyThemeMode = 'theme_mode';
   static const String keyKeepPhotoOriginal = 'keep_photo_original';
   static const String keySkippedUpdateVersion = 'skipped_update_version';
+  static const String keyAutoCheckUpdates = 'auto_check_updates';
+  static const String keyAccentPalette = 'accent_palette';
+  static const String keyHaptics = 'haptics_enabled';
+  static const String keyDefaultSort = 'default_sort';
+  static const String keyStartTab = 'start_tab';
+  static const String keyShowThumbnails = 'show_thumbnails';
+  static const String keyConfirmPermanentDelete = 'confirm_permanent_delete';
+  static const String keyMaxConcurrentUploads = 'max_concurrent_uploads';
+  static const String keySilentUploads = 'silent_uploads';
+  static const String keySyncWifiOnly = 'sync_wifi_only';
+  static const String keySyncOnlyCharging = 'sync_only_charging';
+  static const String keySyncBatteryNotLow = 'sync_battery_not_low';
+
+  /// Folder (inside the app's documents directory) for files downloaded from
+  /// Telegram.
+  static const String downloadsFolderName = 'TeleDrive';
 
   // --- WorkManager task identifiers ------------------------------------------
   static const String periodicSyncTaskName = 'com.tgstorage.app.periodicSync';

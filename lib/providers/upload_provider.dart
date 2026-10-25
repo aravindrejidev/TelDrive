@@ -44,7 +44,14 @@ class UploadTask {
 ///
 /// Uploads run two at a time; the rest wait in a visible queue.
 class UploadProvider extends ChangeNotifier {
-  static const int _maxConcurrent = 2;
+  int _maxConcurrent = 2;
+  int get maxConcurrent => _maxConcurrent;
+
+  /// How many uploads run at once (1 to 4). Raising it starts waiting ones.
+  set maxConcurrent(int value) {
+    _maxConcurrent = value.clamp(1, 4);
+    _pump();
+  }
 
   final Map<String, UploadTask> _tasks = {};
   final List<Future<void> Function()> _pending = [];
@@ -150,6 +157,8 @@ class UploadProvider extends ChangeNotifier {
         throw AppException('Telegram credentials are missing.');
       }
       final keepOriginal = await StorageService.instance.getKeepPhotoOriginal();
+      final silent = await StorageService.instance
+          .getBool(AppConstants.keySilentUploads, fallback: true);
       final telegram = TelegramService(botToken: botToken, channelId: channelId);
 
       final result = await telegram.uploadFile(
@@ -157,6 +166,7 @@ class UploadProvider extends ChangeNotifier {
         fileName: task.fileName,
         category: task.category,
         keepPhotoOriginal: keepOriginal,
+        silent: silent,
         onProgress: (sent, total) {
           final value = total > 0 ? sent / total : 0.0;
           // Repaint at most every 1%; chunks arrive far more often than that.

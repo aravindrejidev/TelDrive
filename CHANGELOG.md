@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased
+
+### Settings, reorganised
+- Settings is now a home screen of sections. Each opens its own page with a
+  slide-and-fade transition and rows that ease in: **Appearance**, **Library**,
+  **Uploads**, **Sync**, **Storage and data**, **Telegram connection**,
+  **Updates** and **About**.
+- **Appearance:** theme (system, light, dark), five accent colours, haptic
+  feedback on or off.
+- **Library:** default sort order, which tab the app opens on, photo
+  thumbnails, and whether permanent deletes ask for confirmation.
+- **Uploads:** original photo quality, silent uploads (no channel
+  notification per file), and 1 to 4 uploads at a time.
+- **Sync:** the sync links, check interval, and new conditions: only on Wi-Fi,
+  only while charging, only when the battery is not low.
+- **Storage and data:** size per category, clear downloaded copies, and forget
+  the removed files that Sync remembers.
+- **Telegram connection:** test the connection, change the token or channel
+  without disconnecting, disconnect.
+- **Updates:** check now, check on start up on or off, clear downloaded
+  updates, and ask again about a skipped version.
+- **About:** app card with version, "Meet TeleDrive", the developer, links to
+  the source code, issues and releases, the exact version and build number,
+  licences, and the commit the build came from.
+
 ## 1.3.0
 
 ### In-app updater

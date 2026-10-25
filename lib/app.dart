@@ -14,9 +14,14 @@ import 'utils/constants.dart';
 class TeleDriveApp extends StatelessWidget {
   const TeleDriveApp({super.key});
 
-  // Built once: the theme does not change, only which one is active.
-  static final ThemeData _lightTheme = buildNeuTheme(Brightness.light);
-  static final ThemeData _darkTheme = buildNeuTheme(Brightness.dark);
+  // Each theme is built once and reused; switching accent just picks another.
+  static final Map<(AccentPalette, Brightness), ThemeData> _themes = {};
+
+  static ThemeData _theme(AccentPalette palette, Brightness brightness) =>
+      _themes.putIfAbsent(
+        (palette, brightness),
+        () => buildNeuTheme(brightness, palette: palette),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -31,8 +36,8 @@ class TeleDriveApp extends StatelessWidget {
         builder: (context, settings, _) => MaterialApp(
           title: AppConstants.appName,
           debugShowCheckedModeBanner: false,
-          theme: _lightTheme,
-          darkTheme: _darkTheme,
+          theme: _theme(settings.accentPalette, Brightness.light),
+          darkTheme: _theme(settings.accentPalette, Brightness.dark),
           themeMode: settings.themeMode,
           builder: (context, child) {
             final c = context.neu;

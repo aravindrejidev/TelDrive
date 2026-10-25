@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import '../models/update_info.dart';
+import '../utils/app_info.dart';
 
 /// A problem the person can be told about in plain words.
 class UpdateException implements Exception {
@@ -43,9 +44,9 @@ class UpdateService {
   UpdateService._();
   static final UpdateService instance = UpdateService._();
 
-  static const String repository = String.fromEnvironment('GITHUB_REPO');
+  static const String repository = AppInfo.repository;
 
-  bool get isConfigured => RegExp(r'^[\w.-]+/[\w.-]+$').hasMatch(repository);
+  bool get isConfigured => AppInfo.hasRepository;
 
   static const Duration _requestTimeout = Duration(seconds: 15);
 
@@ -269,6 +270,30 @@ class UpdateService {
     } finally {
       client.close();
     }
+  }
+
+  /// Size of everything currently stored for updates.
+  Future<int> cachedBytes() async {
+    try {
+      final dir = await _updateDir();
+      var total = 0;
+      await for (final entity in dir.list()) {
+        if (entity is File) total += await entity.length();
+      }
+      return total;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  /// Removes every downloaded update file.
+  Future<void> clearDownloads() async {
+    try {
+      final dir = await _updateDir();
+      await for (final entity in dir.list()) {
+        if (entity is File) await _deleteQuietly(entity);
+      }
+    } catch (_) {}
   }
 
   /// Deletes leftovers from earlier updates: partial downloads and APKs of

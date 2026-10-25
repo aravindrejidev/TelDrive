@@ -215,6 +215,7 @@ class TelegramService {
     required String fileName,
     required FileCategory category,
     bool keepPhotoOriginal = true,
+    bool silent = true,
     void Function(int sent, int total)? onProgress,
   }) async {
     for (var attempt = 0;; attempt++) {
@@ -224,6 +225,7 @@ class TelegramService {
           fileName: fileName,
           category: category,
           keepPhotoOriginal: keepPhotoOriginal,
+          silent: silent,
           onProgress: onProgress,
         );
       } on TelegramApiException catch (e) {
@@ -239,6 +241,7 @@ class TelegramService {
     required String fileName,
     required FileCategory category,
     required bool keepPhotoOriginal,
+    required bool silent,
     void Function(int sent, int total)? onProgress,
   }) {
     return _guard(() async {
@@ -250,7 +253,7 @@ class TelegramService {
       request.fields['caption'] =
           fileName.length > 1000 ? fileName.substring(0, 1000) : fileName;
       // A big sync would otherwise ping everyone who follows the channel.
-      request.fields['disable_notification'] = 'true';
+      if (silent) request.fields['disable_notification'] = 'true';
       if (route.method == 'sendDocument') {
         request.fields['disable_content_type_detection'] = 'true';
       }

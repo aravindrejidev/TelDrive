@@ -1,12 +1,12 @@
 import 'dart:math' as math;
 import 'dart:ui' show FontFeature, ImageFilter;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../models/update_info.dart';
 import '../../providers/update_provider.dart';
 import '../../theme/neu_theme.dart';
 import '../../utils/formatters.dart';
+import '../../utils/haptics.dart';
 import '../neu/neu_controls.dart';
 import '../neu/neu_surface.dart';
 import 'release_notes_view.dart';
@@ -101,10 +101,10 @@ class _UpdateSheetState extends State<_UpdateSheet> with TickerProviderStateMixi
     final phase = _updates.phase;
     if (phase != _lastPhase) {
       if (phase == UpdatePhase.error) {
-        HapticFeedback.heavyImpact();
+        Haptics.heavy();
         _shake.forward(from: 0);
       } else if (phase == UpdatePhase.ready) {
-        HapticFeedback.mediumImpact();
+        Haptics.medium();
       }
     }
     _lastPhase = phase;

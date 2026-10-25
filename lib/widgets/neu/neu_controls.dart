@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import '../../theme/neu_theme.dart';
+import '../../utils/haptics.dart';
 import 'neu_surface.dart';
 
 // ---------------------------------------------------------------------------
@@ -52,7 +52,7 @@ class _NeuTapState extends State<NeuTap> {
         onTap: widget.onTap == null
             ? null
             : () {
-                if (widget.haptics) HapticFeedback.selectionClick();
+                if (widget.haptics) Haptics.tap();
                 widget.onTap!();
               },
         onLongPress: widget.onLongPress,
@@ -361,7 +361,7 @@ class NeuSwitch extends StatelessWidget {
         onTap: handler == null
             ? null
             : () {
-                HapticFeedback.selectionClick();
+                Haptics.tap();
                 handler(!value);
               },
         child: NeuSurface(
@@ -447,7 +447,7 @@ class _PillOption extends StatelessWidget {
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () {
-          if (!selected) HapticFeedback.selectionClick();
+          if (!selected) Haptics.tap();
           onTap();
         },
         child: AnimatedContainer(

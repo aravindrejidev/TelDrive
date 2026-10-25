@@ -125,14 +125,16 @@ jobs:
 
       # The Telegram token is deliberately NOT passed here (the old workflow
       # could). This APK is a public download, and anything compiled into it
-      # can be read back out. GITHUB_REPO is not a secret: it just tells the
-      # app which repository to check for new releases.
+      # can be read back out. GITHUB_REPO and GIT_SHA are not secrets: they let the
+      # app check this repository for updates and show its owner, links and
+      # commit in the About screen.
       - name: Build release APK
         run: |
           flutter build apk --release \
             --build-name="$VERSION" \
             --build-number="$BUILD_NUMBER" \
-            --dart-define=GITHUB_REPO="$GITHUB_REPOSITORY"
+            --dart-define=GITHUB_REPO="$GITHUB_REPOSITORY" \
+            --dart-define=GIT_SHA="$GITHUB_SHA"
 
       - name: Prepare release files
         run: |

@@ -90,7 +90,7 @@ class _FilePreviewScreenState extends State<FilePreviewScreen> {
       // One folder per file keeps two files with the same name apart.
       final destinationPath = p.join(
         baseDir.path,
-        'TeleDrive',
+        AppConstants.downloadsFolderName,
         _item.category.dbValue,
         '${_item.id ?? _item.telegramMessageId}',
         sanitizeFileName(_item.fileName),
@@ -161,7 +161,7 @@ class _FilePreviewScreenState extends State<FilePreviewScreen> {
 
     if (choice == null || !mounted) return;
 
-    if (choice == 'permanent') {
+    if (choice == 'permanent' && context.read<SettingsProvider>().confirmPermanentDelete) {
       final confirmed = await showConfirmDialog(
         context,
         title: 'Delete permanently?',

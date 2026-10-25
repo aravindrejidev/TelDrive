@@ -32,6 +32,9 @@ class UpdateProvider extends ChangeNotifier {
   UpdatePhase get phase => _phase;
 
   AppVersion? currentVersion;
+
+  /// Android's internal build number, shown next to the version in About.
+  String currentBuild = '';
   UpdateInfo? info;
 
   /// Set when a check could not finish (offline, rate limited).
@@ -79,6 +82,7 @@ class UpdateProvider extends ChangeNotifier {
     try {
       final package = await PackageInfo.fromPlatform();
       currentVersion = AppVersion.tryParse(package.version);
+      currentBuild = package.buildNumber;
     } catch (_) {}
     notifyListeners();
     final current = currentVersion;
@@ -220,6 +224,27 @@ class UpdateProvider extends ChangeNotifier {
   }
 
   void cancelDownload() => _handle?.cancel();
+
+  /// Deletes downloaded update files. A finished download that has not been
+  /// installed goes back to "available" so it can be downloaded again.
+  Future<void> clearDownloads() async {
+    if (isBusy) return;
+    await _service.clearDownloads();
+    _apk = null;
+    if (_phase == UpdatePhase.ready ||
+        _phase == UpdatePhase.needsPermission ||
+        _phase == UpdatePhase.error) {
+      _phase = info != null ? UpdatePhase.available : UpdatePhase.idle;
+    }
+    notifyListeners();
+  }
+
+  /// Lets the person be asked about a version they skipped before.
+  Future<void> forgetSkippedVersion() async {
+    await StorageService.instance.clearSkippedUpdateVersion();
+    _promptedThisSession = false;
+    notifyListeners();
+  }
 
   /// Hands the downloaded APK to Android's installer, asking for the
   /// "install unknown apps" permission first if it is missing.
